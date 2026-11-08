@@ -88,12 +88,19 @@ const Store = {
 };
 
 /* ================= Stage: one shared three.js renderer ================= */
-const HIT_MAT = () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+/* hit-area helper: a mesh that is never rendered but still raycasts (Raycaster ignores `visible`) */
+const HIT_MAT_SHARED = new THREE.MeshBasicMaterial();
+const HIT_MAT = () => HIT_MAT_SHARED;
+const hitSphere = r => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 4), HIT_MAT_SHARED); m.visible = false; return m; };
 class Stage {
   constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    /* phones: cap the render resolution at 1.5× (3× screens would otherwise push 4× the pixels for no visible gain) */
+    this.isMobile = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 820;
+    this.pr = Math.min(window.devicePixelRatio || 1, this.isMobile ? 1.5 : 2);
+    this.renderer.setPixelRatio(this.pr);
+    this.frameAvg = 16; this.slowFor = 0;
     this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.scene = new THREE.Scene();
     this.scene.background = srgb(0x7c5cff);
@@ -206,6 +213,9 @@ class Stage {
     requestAnimationFrame(this.loop);
     if (this.paused) return;
     const dt = Math.min(this.clock.getDelta() * 1000, 60), t = this.clock.elapsedTime;
+    /* adaptive quality: if frames stay above ~30 ms for 2 s, step the pixel ratio down (never below 1) */
+    this.frameAvg += (dt - this.frameAvg) * 0.05;
+    if (this.frameAvg > 30 && this.pr > 1) { this.slowFor += dt; if (this.slowFor > 2000) { this.pr = Math.max(1, this.pr - 0.25); this.renderer.setPixelRatio(this.pr); this.resize(); this.slowFor = 0; this.frameAvg = 16; } } else this.slowFor = 0;
     Tween.update(dt);
     for (const m of this.backdrop.children) { const v = m.userData.v; m.rotation.x += v.rx * dt / 1000; m.rotation.y += v.ry * dt / 1000; m.position.y = v.y0 + Math.sin(t * v.fy + v.ph) * 1.2; }
     if (this.mascot.group.visible) this.mascot.update(dt, t);
@@ -310,8 +320,8 @@ const UI = {
   },
   showHome() { this.home.classList.remove('hidden'); this.hud.classList.add('hidden'); this.modal.classList.add('hidden'); this.keypad.classList.add('hidden'); },
   showGame(name) { this.home.classList.add('hidden'); this.hud.classList.remove('hidden'); this.modal.classList.add('hidden'); $('#hud-name').textContent = name; this.score(''); this.level(''); this.say(''); },
-  level(t) { $('#hud-level').textContent = t; $('#hud-level').style.display = t ? '' : 'none'; },
-  score(t) { $('#hud-score').textContent = t; },
+  level(t) { if (t === this._level) return; this._level = t; $('#hud-level').textContent = t; $('#hud-level').style.display = t ? '' : 'none'; },
+  score(t) { if (t === this._score) return; this._score = t; $('#hud-score').textContent = t; },
   say(text, ms = 0) {
     clearTimeout(this.sayTimer);
     if (!text) { this.sayEl.classList.add('empty'); return; }
@@ -375,7 +385,7 @@ class BubblePop extends Game {
     const W = this.stage.viewW / 2 - 1.5, H = this.stage.viewH / 2;
     m.position.set(rand(-W, W), initial ? rand(-H, H) : -H - 2, rand(-1, 1));
     m.userData.vy = rand(1.0, 1.8) + this.level * 0.15; m.userData.ph = rand(0, 6.28); m.userData.rot = rand(-1, 1);
-    m.add(new THREE.Mesh(new THREE.SphereGeometry(1.45, 8, 6), HIT_MAT())); // generous hit area for little fingers
+    m.add(hitSphere(1.45)); // generous hit area for little fingers
     this.pickable(m, { tap: o => this.pop(o) });
     this.group.add(m); this.bubbles.push(m);
   }
@@ -500,7 +510,7 @@ class ShapeSorter extends Game {
       const p = rowPos(n, n <= 4 ? -3.2 : -2.2, -4.9, i);
       const s = new THREE.Mesh(SHAPES[name](), mat(colors[i], { roughness: .3 }));
       s.position.set(p.x, p.y, 0); s.userData.name = name; s.userData.home = s.position.clone();
-      s.add(new THREE.Mesh(new THREE.SphereGeometry(1.35, 8, 6), HIT_MAT()));
+      s.add(hitSphere(1.35));
       this.pickable(s, { draggable: true }); this.group.add(s); this.shapes.push(s);
     });
     UI.score(`0 / ${n}`); UI.say('Drag each shape onto its shadow! 👆'); Audio.speak('Drag each shape onto its shadow');
@@ -542,10 +552,11 @@ class MatchPairs extends Game {
     const faces = shuffle(EMOJIS).slice(0, pairs), deck = shuffle(faces.concat(faces));
     this.open = []; this.matched = 0; this.pairs = pairs; this.moves = 0; this.cards = [];
     const geo = new THREE.BoxGeometry(2, 2.4, 0.16), backTex = patternTexture('#' + new THREE.Color(pick(PALETTE)).getHexString());
-    const side = mat(0xffffff);
+    boxGroups(geo, 1, 2);
+    const side = mat(0xffffff), backMat = new THREE.MeshStandardMaterial({ map: backTex, roughness: .5 });
     deck.forEach((emoji, i) => {
       const r = Math.floor(i / cols), c = i % cols;
-      const m = new THREE.Mesh(geo, [side, side, side, side, new THREE.MeshStandardMaterial({ map: backTex, roughness: .5 }), new THREE.MeshStandardMaterial({ map: emojiTexture(emoji), roughness: .5 })]);
+      const m = new THREE.Mesh(geo, [side, backMat, new THREE.MeshStandardMaterial({ map: emojiTexture(emoji), roughness: .5 })]);
       m.position.set((c - (cols - 1) / 2) * cw, ((rows - 1) / 2 - r) * ch, 0);
       m.userData.emoji = emoji; m.scale.setScalar(0.01);
       Tween.to(m.scale, { x: 1, y: 1, z: 1 }, 400, Ease.back, i * 40);
@@ -640,7 +651,7 @@ class WhatsMissing extends Game {
     const names = shuffle(SHAPE_NAMES).slice(0, this.n + 2), colors = shuffle(PALETTE);
     const all = names.map((s, i) => ({ shape: s, color: colors[i] }));
     const shown = all.slice(0, this.n), decoys = all.slice(this.n);
-    const make = d => { const m = new THREE.Mesh(SHAPES[d.shape](), mat(d.color, { roughness: .3 })); m.userData.d = d; m.add(new THREE.Mesh(new THREE.SphereGeometry(1.3, 8, 6), HIT_MAT())); return m; };
+    const make = d => { const m = new THREE.Mesh(SHAPES[d.shape](), mat(d.color, { roughness: .3 })); m.userData.d = d; m.add(hitSphere(1.3)); return m; };
     shown.forEach((d, i) => { const p = this.layout(this.n, i, this.n <= 4 ? 2.2 : 3.4, 0.6); const m = make(d); m.position.set(p.x, p.y, 0); m.scale.setScalar(0.01); Tween.to(m.scale, { x: 1, y: 1, z: 1 }, 350, Ease.back, i * 80); this.group.add(m); this.items.push(m); });
     UI.say('Remember these! 👀'); Audio.speak('Remember these');
     await this.sleep(2200 + this.n * 450);
@@ -733,6 +744,7 @@ class NumberRecall extends Game {
   clearCubes() { for (const c of this.cubes) this.group.remove(c); this.cubes = []; }
   /* digit only on the front face; the other five faces are plain colour */
   cubeMats(tex, color) { const side = mat(color, { roughness: .4 }); return [side, side, side, side, new THREE.MeshStandardMaterial({ map: tex, roughness: .4 }), side]; }
+  cubeGeo(size) { const g = new THREE.BoxGeometry(size, size, size); return g; }
   async nextRound() {
     this.locked = true; this.round++; UI.score(`Round ${this.round}/${this.rounds}`); UI.hideKeypad(); this.clearCubes();
     this.digits = Array.from({ length: this.len }, () => randInt(0, 9)); this.typed = '';
@@ -877,11 +889,14 @@ function gridLayout(count, cols, sx, sy, cy = 0) {
   }
   return out;
 }
+/* BoxGeometry has 6 face groups (+x,-x,+y,-y,+z,-z; 6 indices each) and the renderer draws every group separately.
+   Collapse them to 3: sides → material 0, front (+z) → frontIdx, back (-z) → backIdx. */
+function boxGroups(geo, frontIdx, backIdx) { geo.clearGroups(); geo.addGroup(0, 24, 0); geo.addGroup(24, 6, frontIdx); geo.addGroup(30, 6, backIdx); return geo; }
 /* a thin rounded tile with an emoji or text on the front face */
 function tile(tex, color = 0xffffff, w = 2.2, h = 2.2, d = 0.4) {
-  const side = mat(color, { roughness: .5 });
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, side, side, new THREE.MeshStandardMaterial({ map: tex, roughness: .5 }), side]);
-  m.add(new THREE.Mesh(new THREE.SphereGeometry(Math.max(w, h) * 0.7, 8, 6), HIT_MAT()));
+  const geo = boxGroups(new THREE.BoxGeometry(w, h, d), 1, 0); // 3 draw calls, not 6
+  const m = new THREE.Mesh(geo, [mat(color, { roughness: .5 }), new THREE.MeshStandardMaterial({ map: tex, roughness: .5 })]);
+  m.add(hitSphere(Math.max(w, h) * 0.7));
   return m;
 }
 const wobble = (o, t, i = 0, amp = 0.25) => { o.rotation.y = Math.sin(t * 1.6 + i) * amp; o.rotation.x = Math.sin(t * 1.1 + i * 1.3) * amp * 0.5; };
@@ -997,7 +1012,7 @@ class OddOneOut extends Game {
       const odd = i === oddIdx;
       const m = new THREE.Mesh(SHAPES[odd ? oddShape : shape](), mat(odd ? oddColor : color, { roughness: .3 }));
       m.position.set(p.x, p.y, 0); m.userData.odd = odd; m.userData.s = odd ? oddScale : 1; m.scale.setScalar(0.01);
-      m.add(new THREE.Mesh(new THREE.SphereGeometry(1.4, 8, 6), HIT_MAT()));
+      m.add(hitSphere(1.4));
       Tween.to(m.scale, { x: m.userData.s, y: m.userData.s, z: m.userData.s }, 300, Ease.back, i * 50);
       this.pickable(m, { tap: o => this.tap(o) }); this.group.add(m); this.items.push(m);
     });
@@ -1089,7 +1104,7 @@ class MathPop extends Game {
     shuffle([...opts]).forEach((v, i) => {
       const m = new THREE.Mesh(new THREE.SphereGeometry(1.5, 32, 24), mat(PALETTE[(i * 2 + this.round) % PALETTE.length], { roughness: .25 }));
       const label = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9), new THREE.MeshBasicMaterial({ map: textTexture(String(v), 'rgba(0,0,0,0)', '#ffffff'), transparent: true })); label.position.z = 1.45; m.add(label);
-      m.add(new THREE.Mesh(new THREE.SphereGeometry(1.9, 8, 6), HIT_MAT()));
+      m.add(hitSphere(1.9));
       m.position.set(pos[i].x, pos[i].y, 0); m.userData.v = v; m.userData.ph = rand(0, 6.28); m.userData.y0 = pos[i].y; m.scale.setScalar(0.01);
       Tween.to(m.scale, { x: 1, y: 1, z: 1 }, 300, Ease.back, i * 80);
       this.pickable(m, { tap: o => this.answer(o) }); this.group.add(m); this.bubbles.push(m);
@@ -1145,7 +1160,7 @@ class SpinMatch extends Game {
     const g = new THREE.Group(), inner = new THREE.Group(), u = 0.8, geo = new THREE.BoxGeometry(u * 0.96, u * 0.96, u * 0.96), m = mat(color, { roughness: .4 });
     const cx = cells.reduce((s, c) => s + c[0], 0) / cells.length, cy = cells.reduce((s, c) => s + c[1], 0) / cells.length, cz = cells.reduce((s, c) => s + c[2], 0) / cells.length;
     for (const c of cells) { const b = new THREE.Mesh(geo, m); b.position.set((c[0] - cx) * u, (c[1] - cy) * u, (c[2] - cz) * u); inner.add(b); }
-    g.add(inner); g.userData.inner = inner; g.add(new THREE.Mesh(new THREE.SphereGeometry(2.1, 8, 6), HIT_MAT()));
+    g.add(inner); g.userData.inner = inner; g.add(hitSphere(2.1));
     return g;
   }
   nextRound() {
