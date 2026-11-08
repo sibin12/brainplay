@@ -850,7 +850,7 @@ class Mascot {
   }
   setMood(m) { this.mood = m; for (const k in this.mouths) this.mouths[k].visible = k === m; const tilt = m === 'sad' ? 0.35 : m === 'wow' ? -0.25 : m === 'grin' ? -0.1 : 0; for (const b of this.brows) { b.rotation.z = b.userData.sx * tilt; b.position.y = m === 'wow' ? 0.65 : 0.55; } }
   /* one-shot animations: 'wave' | 'jump' | 'sad' | 'wow' */
-  play(name) { this.anim = name; this.animT = 0; if (name === 'jump') this.setMood('grin'); if (name === 'sad') this.setMood('sad'); if (name === 'wow') this.setMood('wow'); if (name === 'wave') this.setMood('happy'); }
+  play(name) { this.anim = name; this.animT = 0; if (name === 'dance' || name === 'clap') this.setMood('grin'); if (name === 'jump') this.setMood('grin'); if (name === 'sad') this.setMood('sad'); if (name === 'wow') this.setMood('wow'); if (name === 'wave') this.setMood('happy'); }
   update(dt, t) {
     const s = dt / 1000; this.t += s;
     // idle breathing + bob
@@ -877,7 +877,37 @@ class Mascot {
     else if (this.anim === 'wow') { this.head.rotation.x = -0.15; for (const a of this.arms) a.rotation.z = a.userData.sx * 1.2; if (T > 1.2) { this.anim = null; this.head.rotation.x = 0; this.setMood('happy'); } }
   }
   place(x, y, z, scale) { this.group.position.set(x, y, z); this.group.userData.y0 = y; this.baseScale = scale; this.group.scale.setScalar(scale); }
+  /* ---- accessories: hat, crown, cap, glasses, bow, scarf (one of each at most) ---- */
+  addAccessory(type, color = 0xff5e7a) {
+    this.acc = this.acc || {}; this.removeAccessory(type);
+    const g = new THREE.Group(), m = mat(color, { roughness: .45 }), dark = mat(0x222244, { roughness: .3 }), gold = mat(0xffd000, { roughness: .3, metalness: .3 });
+    let parent = this.head;
+    if (type === 'hat') { const cone = new THREE.Mesh(new THREE.ConeGeometry(0.72, 1.25, 24), m); cone.position.y = 1.55; g.add(cone); const brim = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.12, 10, 28), m); brim.rotation.x = Math.PI / 2; brim.position.y = 0.95; g.add(brim); }
+    else if (type === 'crown') { const band = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 0.42, 10, 1, true), gold); band.position.y = 1.12; g.add(band); for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2, sp = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.36, 8), gold); sp.position.set(Math.cos(a) * 0.6, 1.48, Math.sin(a) * 0.6); g.add(sp); const gem = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), m); gem.position.set(Math.cos(a) * 0.66, 1.15, Math.sin(a) * 0.66); g.add(gem); } }
+    else if (type === 'cap') { const dome = new THREE.Mesh(new THREE.SphereGeometry(0.98, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2.4), m); dome.position.y = 0.32; g.add(dome); const brim = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.08, 0.7), m); brim.position.set(0, 0.6, 1.0); brim.rotation.x = 0.15; g.add(brim); const btn = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), dark); btn.position.y = 1.3; g.add(btn); }
+    else if (type === 'glasses') { for (const sx of [-1, 1]) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.06, 8, 24), dark); ring.position.set(sx * 0.4, 0.12, 1.12); g.add(ring); } const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.06), dark); bridge.position.set(0, 0.14, 1.12); g.add(bridge); for (const sx of [-1, 1]) { const lens = new THREE.Mesh(new THREE.CircleGeometry(0.3, 20), mat(color, { transparent: true, opacity: 0.45 })); lens.position.set(sx * 0.4, 0.12, 1.13); g.add(lens); } }
+    else if (type === 'bow') { for (const sx of [-1, 1]) { const loop = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.6, 12), m); loop.rotation.z = sx * Math.PI / 2; loop.position.set(-0.55 + sx * 0.32, 1.0, 0.35); g.add(loop); } const knot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), m); knot.position.set(-0.55, 1.0, 0.4); g.add(knot); }
+    else if (type === 'scarf') { parent = this.group; const ring = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.22, 12, 30), m); ring.rotation.x = Math.PI / 2; ring.position.y = -0.4; g.add(ring); const tail = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.9, 0.16), m); tail.position.set(0.5, -0.85, 0.85); tail.rotation.z = 0.2; g.add(tail); }
+    parent.add(g); this.acc[type] = g; return g;
+  }
+  removeAccessory(type) { if (this.acc && this.acc[type]) { this.acc[type].parent.remove(this.acc[type]); delete this.acc[type]; } }
+  clearAccessories() { if (this.acc) for (const k of Object.keys(this.acc)) this.removeAccessory(k); }
+  accessories() { return this.acc ? Object.keys(this.acc).sort() : []; }
 }
+/* extra one-shot actions used by Bo's World: spin, duck, dance, clap, eat */
+Mascot.ACTIONS = { jump: ['🦘', 'Jump'], wave: ['👋', 'Wave'], spin: ['🌀', 'Spin'], duck: ['🙇', 'Duck'], dance: ['💃', 'Dance'], clap: ['👏', 'Clap'] };
+const _mascotUpdate = Mascot.prototype.update;
+Mascot.prototype.update = function (dt, t) {
+  const extra = ['spin', 'duck', 'dance', 'clap', 'eat'].includes(this.anim) ? this.anim : null;
+  if (extra) { const keep = this.anim; this.anim = null; _mascotUpdate.call(this, dt, t); this.anim = keep; } else { _mascotUpdate.call(this, dt, t); return; }
+  this.animT += dt / 1000; const T = this.animT, bs = this.baseScale || 1;
+  if (extra === 'spin') { const p = Math.min(T / 1.0, 1); this.group.rotation.y = Ease.inOut(p) * Math.PI * 2; for (const a of this.arms) a.rotation.z = a.userData.sx * 1.4; if (p >= 1) { this.group.rotation.y = 0; this.anim = null; } }
+  else if (extra === 'duck') { const p = Math.min(T / 0.9, 1), k = Math.sin(p * Math.PI); this.group.scale.set(bs * (1 + k * 0.25), bs * (1 - k * 0.45), bs * (1 + k * 0.25)); this.head.rotation.x = k * 0.5; if (p >= 1) { this.group.scale.setScalar(bs); this.head.rotation.x = 0; this.anim = null; } }
+  else if (extra === 'dance') { const p = Math.min(T / 1.6, 1); this.group.rotation.z = Math.sin(T * 10) * 0.18; this.group.position.y = (this.group.userData.y0 || 0) + Math.abs(Math.sin(T * 10)) * 0.25; this.arms[0].rotation.z = -1.2 - Math.sin(T * 10) * 0.9; this.arms[1].rotation.z = 1.2 - Math.sin(T * 10) * 0.9; if (p >= 1) { this.group.rotation.z = 0; this.anim = null; this.setMood('happy'); } }
+  else if (extra === 'clap') { const p = Math.min(T / 1.2, 1), k = Math.abs(Math.sin(T * 12)); for (const a of this.arms) { a.rotation.z = a.userData.sx * (0.4 + k * 0.9); a.rotation.x = -1.4; } if (p >= 1) { for (const a of this.arms) a.rotation.x = 0; this.anim = null; } }
+  else if (extra === 'eat') { const p = Math.min(T / 1.4, 1); this.setMood(Math.floor(T * 7) % 2 ? 'wow' : 'grin'); this.head.rotation.x = Math.sin(T * 14) * 0.08; if (p >= 1) { this.head.rotation.x = 0; this.anim = null; this.setMood('happy'); } }
+};
+
 
 /* ================= shared helpers for the second batch of games ================= */
 /* centred grid positions: count items in rows of `cols`, spaced sx/sy, centred on (0, cy) */
@@ -1363,6 +1393,191 @@ class Schulte extends Game {
   update(dt, t) { super.update(dt, t); if (this.started && !this.done) UI.score(`⏱ ${((performance.now() - this.t0) / 1000).toFixed(1)}s`); }
 }
 
+
+/* ================= Bo's World — games starring the mascot ================= */
+/* emoji on top, small word underneath */
+function iconLabelTexture(emoji, label, bg = '#ffffff') {
+  const key = 'IL' + emoji + label + bg; if (texCache.has(key)) return texCache.get(key);
+  const size = 256, c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, size, size);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `${size * 0.46}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`; g.fillText(emoji, size / 2, size * 0.4);
+  g.fillStyle = '#1f1b3a'; g.font = `bold ${size * 0.17}px Fredoka, Nunito, system-ui, sans-serif`; g.fillText(label, size / 2, size * 0.8);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; texCache.set(key, t); return t;
+}
+const FRIEND_NAMES = ['Milo', 'Zia', 'Kiko', 'Nova', 'Lulu', 'Rex', 'Pip', 'Tango'];
+const BO_COLORS = [0x3fc1ff, 0xff5e7a, 0x6bd968, 0xffa94d, 0xff7ad9, 0x2fd6c4, 0xffd93d, 0x7c5cff];
+
+/* =====================================================================
+   GAME 19 · Bo Says — watch Bo's moves, repeat them in order
+   ===================================================================== */
+class BoSays extends Game {
+  start() {
+    this.stage.fit(13, 13);
+    const L = Math.min(this.level, 8) - 1;
+    this.actions = Object.keys(Mascot.ACTIONS).slice(0, L < 2 ? 3 : L < 4 ? 4 : L < 6 ? 5 : 6); this.target = 2 + this.level; this.seq = []; this.idx = 0; this.mistakes = 0;
+    this.bo = new Mascot(0x3fc1ff); this.bo.place(0, 1.6, 0, 1.05); this.group.add(this.bo.group);
+    const stand = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.4, 0.35, 36), mat(0xffffff, { transparent: true, opacity: 0.35 })); stand.position.set(0, -0.6, 0); this.group.add(stand);
+    this.tiles = {}; const pos = gridLayout(this.actions.length, 3, 3.1, 3.1, this.actions.length > 3 ? -4.6 : -4.0);
+    this.actions.forEach((a, i) => { const [emoji, label] = Mascot.ACTIONS[a]; const m = tile(iconLabelTexture(emoji, label), PALETTE[i % PALETTE.length], 2.7, 2.7, 0.5); m.position.set(pos[i].x, pos[i].y, 0); m.userData.a = a; this.pickable(m, { tap: o => this.press(o) }); this.group.add(m); this.tiles[a] = m; });
+    UI.score('🎬 0'); UI.say('Watch what Bo does, then copy the moves in order!'); Audio.speak('Watch what I do, then copy my moves!');
+    setTimeout(() => this.alive && this.extend(), 2200);
+  }
+  async perform(a) { this.bo.play(a); UI.say(`${Mascot.ACTIONS[a][0]} ${Mascot.ACTIONS[a][1]}!`); Audio.speak(Mascot.ACTIONS[a][1]); Audio.note(this.actions.indexOf(a), 0.3); const t = this.tiles[a]; this.tw(t.position, { z: 0.7 }, 100).then(() => this.tw(t.position, { z: 0 }, 200)); await this.sleep(a === 'dance' ? 1800 : 1300); }
+  async extend() { this.seq.push(pick(this.actions)); UI.score('🎬 ' + this.seq.length); await this.play(); }
+  async play() { this.locked = true; UI.say('Bo says… 👀'); await this.sleep(700); for (const a of this.seq) await this.perform(a); UI.say('Your turn! Tap the moves in order 👆'); this.idx = 0; this.locked = false; }
+  async press(m) {
+    const a = m.userData.a; this.locked = true;
+    if (a === this.seq[this.idx]) {
+      this.bo.play(a); Audio.note(this.actions.indexOf(a), 0.25); this.idx++;
+      if (this.idx === this.seq.length) {
+        if (this.seq.length >= this.target) { this.finish(this.mistakes === 0 ? 3 : this.mistakes === 1 ? 2 : 1, `You copied ${this.seq.length} moves in a row!`); return; }
+        Audio.good(); UI.say(pick(['Yes! One more 🎬', 'Perfect copy! ⭐', 'Bo loves it! 💙'])); await this.sleep(1300); this.extend();
+      } else { await this.sleep(700); this.locked = false; }
+    } else {
+      this.mistakes++; Audio.oops(); this.bo.play('sad');
+      if (this.mistakes >= 3) { this.finish(1, `You copied ${Math.max(0, this.seq.length - 1)} moves. Try again!`, { next: false, title: 'Good try!', emoji: '💪' }); return; }
+      UI.say(`Oops! Bo did ${Mascot.ACTIONS[this.seq[this.idx]][1]}. Watch again 👀`); await this.sleep(1400); this.play();
+    }
+  }
+  update(dt, t) { super.update(dt, t); this.bo.update(dt, t); }
+}
+
+/* =====================================================================
+   GAME 20 · Copy the Look — remember Bo's outfit, then dress Bo again
+   ===================================================================== */
+const OUTFIT = { hat: ['🎩', 'Hat', 0xff5e7a], crown: ['👑', 'Crown', 0xffd000], cap: ['🧢', 'Cap', 0x3fc1ff], glasses: ['🕶️', 'Glasses', 0x6bd968], bow: ['🎀', 'Bow', 0xff7ad9], scarf: ['🧣', 'Scarf', 0xffa94d] };
+class CopyLook extends Game {
+  start() {
+    this.stage.fit(13, 13);
+    const L = Math.min(this.level, 8) - 1;
+    this.options = Object.keys(OUTFIT).slice(0, L < 2 ? 3 : L < 4 ? 4 : L < 6 ? 5 : 6); this.count = L < 1 ? 1 : L < 3 ? 2 : L < 6 ? 2 + (L % 2) : 3; this.showMs = Math.max(2000, 4200 - L * 300);
+    this.round = 0; this.rounds = 3; this.mistakes = 0;
+    this.bo = new Mascot(0x3fc1ff); this.bo.place(0, 1.9, 0, 1.0); this.group.add(this.bo.group);
+    const stand = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.2, 0.35, 36), mat(0xffffff, { transparent: true, opacity: 0.35 })); stand.position.set(0, -0.3, 0); this.group.add(stand);
+    this.tiles = {}; const pos = gridLayout(this.options.length + 1, 4, 2.9, 2.9, -4.4);
+    this.options.forEach((k, i) => { const [e, label, col] = OUTFIT[k]; const m = tile(iconLabelTexture(e, label), col, 2.5, 2.5, 0.5); m.position.set(pos[i].x, pos[i].y, 0); m.userData.k = k; this.pickable(m, { tap: o => this.toggle(o) }); this.group.add(m); this.tiles[k] = m; });
+    const done = this.doneTile = tile(iconLabelTexture('✅', 'Done'), 0x6bd968, 2.5, 2.5, 0.5); const pd = pos[this.options.length]; done.position.set(pd.x, pd.y, 0); this.pickable(done, { tap: () => this.check() }); this.group.add(done);
+    this.setTilesVisible(false);
+    this.nextRound();
+  }
+  setTilesVisible(v) { for (const k in this.tiles) { this.tiles[k].visible = v; this.tiles[k].userData.disabled = !v; } this.doneTile.visible = v; this.doneTile.userData.disabled = !v; }
+  async nextRound() {
+    this.locked = true; this.round++; UI.level(`Round ${this.round}/${this.rounds}`); this.bo.clearAccessories(); this.setTilesVisible(false);
+    this.targetLook = shuffle(this.options).slice(0, this.count).sort();
+    UI.say("Remember Bo's look! 👀"); Audio.speak("Remember my look!"); await this.sleep(600);
+    for (const k of this.targetLook) { this.bo.addAccessory(k, OUTFIT[k][2]); Audio.tap(); await this.sleep(350); }
+    this.bo.play('wave'); await this.sleep(this.showMs);
+    Audio.whoosh(); this.bo.clearAccessories(); this.bo.play('wow'); await this.sleep(500);
+    this.setTilesVisible(true); for (const k in this.tiles) this.tiles[k].position.z = 0;
+    UI.say('Dress Bo the same way, then tap Done ✅'); Audio.speak('Dress me the same way, then tap done');
+    this.locked = false;
+  }
+  toggle(m) {
+    const k = m.userData.k; Audio.tap();
+    if (this.bo.acc && this.bo.acc[k]) { this.bo.removeAccessory(k); this.tw(m.position, { z: 0 }, 120); }
+    else { this.bo.addAccessory(k, OUTFIT[k][2]); this.tw(m.position, { z: 0.8 }, 120); }
+  }
+  async check() {
+    this.locked = true; const got = this.bo.accessories(), ok = got.join() === this.targetLook.join();
+    if (ok) { Audio.good(); this.bo.play('jump'); UI.say('Perfect! That is exactly my look! 🎉'); Audio.speak('Perfect! That is exactly my look!'); this.parts.push(...confetti(this.stage, this.group, 35, this.bo.group.position.clone())); }
+    else { this.mistakes++; Audio.oops(); this.bo.play('sad'); const names = this.targetLook.map(k => OUTFIT[k][1].toLowerCase()).join(' + '); UI.say(`Not quite! I wore: ${names}`); Audio.speak(`Not quite! I wore ${names}`); this.bo.clearAccessories(); await this.sleep(600); for (const k of this.targetLook) { this.bo.addAccessory(k, OUTFIT[k][2]); await this.sleep(250); } }
+    await this.sleep(1800);
+    if (this.round >= this.rounds) this.finish(this.mistakes === 0 ? 3 : this.mistakes === 1 ? 2 : 1, 'Bo looks fabulous!'); else this.nextRound();
+  }
+  update(dt, t) { super.update(dt, t); this.bo.update(dt, t); }
+}
+
+/* =====================================================================
+   GAME 21 · Feed Bo — listen, then drag the right snack to Bo's mouth
+   ===================================================================== */
+const SNACKS = [['apple', '🍎'], ['banana', '🍌'], ['strawberry', '🍓'], ['grapes', '🍇'], ['orange', '🍊'], ['carrot', '🥕'], ['cookie', '🍪'], ['pizza', '🍕'], ['ice cream', '🍦'], ['cheese', '🧀'], ['broccoli', '🥦'], ['watermelon', '🍉']];
+class FeedBo extends Game {
+  start() {
+    this.stage.fit(13, 13);
+    const L = Math.min(this.level, 8) - 1;
+    this.n = [2, 3, 3, 4, 4, 5, 6, 6][L]; this.round = 0; this.rounds = 5; this.misses = 0; this.foods = [];
+    this.bo = new Mascot(BO_COLORS[L % BO_COLORS.length]); this.bo.place(0, 2.4, 0, 1.0); this.group.add(this.bo.group);
+    this.mouthPos = new THREE.Vector3(0, 2.6, 0);
+    this.nextRound();
+  }
+  async nextRound() {
+    this.locked = true; this.round++; UI.level(`Round ${this.round}/${this.rounds}`);
+    for (const f of this.foods) { this.unpick(f); this.group.remove(f); } this.foods = [];
+    const set = shuffle(SNACKS).slice(0, this.n); this.want = pick(set);
+    const pos = gridLayout(this.n, this.n <= 3 ? 3 : 4, 3.0, 3.0, this.n <= 4 ? -3.6 : -3.4);
+    set.forEach((f, i) => { const m = tile(emojiTexture(f[1], '#fffbe6'), PALETTE[i % PALETTE.length], 2.5, 2.5, 0.5); m.position.set(pos[i].x, pos[i].y, 0); m.userData.f = f; m.userData.home = m.position.clone(); this.pickable(m, { draggable: true }); this.group.add(m); this.foods.push(m); m.scale.setScalar(0.01); Tween.to(m.scale, { x: 1, y: 1, z: 1 }, 300, Ease.back, i * 80); });
+    this.bo.play('wave'); UI.say(`I'm hungry! Give me the ${this.want[0]} ${this.want[1]}`); Audio.speak(`I'm hungry! Give me the ${this.want[0]}`);
+    await this.sleep(600); this.locked = false;
+  }
+  onDragStart(o) { o.position.z = 1.5; Tween.to(o.scale, { x: 1.15, y: 1.15, z: 1.15 }, 150); Audio.tap(); this.bo.lookX = 0; }
+  onDrag(o, p) { o.position.x = p.x; o.position.y = p.y; this.bo.lookX = clamp(p.x / 4, -1, 1); this.bo.lookY = clamp((p.y - 2.5) / 4, -1, 1); if (!this.bo.anim) this.bo.setMood('wow'); }
+  async onDrop(o, p) {
+    const d = Math.hypot(o.position.x - this.mouthPos.x, o.position.y - this.mouthPos.y);
+    this.bo.lookX = 0; this.bo.lookY = 0;
+    if (d < 2.4) {
+      this.locked = true;
+      if (o.userData.f === this.want) {
+        this.unpick(o); Audio.pop(); this.bo.play('eat'); UI.say(`Yum yum! ${this.want[1]} Thank you! 😋`); Audio.speak(pick(['Yum yum! Thank you!', 'Delicious!', 'My favourite!']));
+        this.tw(o.position, { x: 0, y: 2.6, z: 1.2 }, 150).then(() => this.tw(o.scale, { x: 0.01, y: 0.01, z: 0.01 }, 400, Ease.in));
+        await this.sleep(1700); Audio.good();
+        if (this.round >= this.rounds) this.finish(this.misses === 0 ? 3 : this.misses <= 2 ? 2 : 1, 'Bo is full and happy!'); else this.nextRound();
+      } else {
+        this.misses++; Audio.oops(); this.bo.play('sad'); UI.say(`Yuck, not the ${o.userData.f[0]}! I want the ${this.want[0]} ${this.want[1]}`); Audio.speak(`Yuck! Not that. I want the ${this.want[0]}`);
+        const h = o.userData.home; this.tw(o.position, { x: h.x, y: h.y, z: 0 }, 450, Ease.back); this.tw(o.scale, { x: 1, y: 1, z: 1 }, 200);
+        await this.sleep(1200); this.locked = false;
+      }
+    } else { if (!this.bo.anim) this.bo.setMood('happy'); const h = o.userData.home; this.tw(o.position, { x: h.x, y: h.y, z: 0 }, 450, Ease.back); this.tw(o.scale, { x: 1, y: 1, z: 1 }, 200); }
+  }
+  update(dt, t) { super.update(dt, t); this.bo.update(dt, t); this.foods.forEach((f, i) => { if (!this.stage.drag || this.stage.drag.obj !== f) f.rotation.y = Math.sin(t * 1.5 + i) * 0.2; }); }
+}
+
+/* =====================================================================
+   GAME 22 · Who's Who — meet Bo's friends, then find them by name
+   ===================================================================== */
+class WhosWho extends Game {
+  start() {
+    this.stage.fit(13.5, 13);
+    const L = Math.min(this.level, 8) - 1;
+    this.n = [2, 3, 3, 4, 4, 5, 5, 6][L]; this.shuffleAfter = L >= 3; this.rounds = this.n + 1; this.round = 0; this.misses = 0;
+    const names = shuffle(FRIEND_NAMES).slice(0, this.n), colors = shuffle(BO_COLORS).slice(0, this.n);
+    const pos = gridLayout(this.n, this.n <= 3 ? this.n : 3, 4.3, 5.4, this.n > 3 ? 0.8 : 0.3);
+    this.friends = names.map((name, i) => {
+      const m = new Mascot(colors[i]); m.place(pos[i].x, pos[i].y, 0, 0.72); if (i % 2) m.addAccessory(pick(['bow', 'cap', 'glasses']), pick(PALETTE));
+      m.group.add(hitSphere(2.6)); m.group.userData.name = name;
+      const label = tile(wordTexture(name, '#ffffff', '#1f1b3a'), 0xffffff, 2.6, 1.1, 0.3); label.position.set(0, -2.9, 0.6); label.scale.setScalar(1 / 0.72); m.group.add(label); m.label = label;
+      this.pickable(m.group, { tap: o => this.tap(o) }); this.group.add(m.group); return m;
+    });
+    this.intro();
+  }
+  async intro() {
+    this.locked = true; UI.say("Meet Bo's friends! 👋"); Audio.speak("Meet my friends!"); await this.sleep(1200);
+    for (const f of this.friends) { f.play('jump'); UI.say(`This is ${f.group.userData.name}!`); Audio.speak(`This is ${f.group.userData.name}`); await this.sleep(1700); }
+    await this.sleep(400);
+    for (const f of this.friends) f.label.visible = false;
+    if (this.shuffleAfter) { Audio.whoosh(); const spots = shuffle(this.friends.map(f => f.group.position.clone())); await Promise.all(this.friends.map((f, i) => this.tw(f.group.position, { x: spots[i].x, y: spots[i].y }, 900, Ease.inOut).then(() => { f.group.userData.y0 = spots[i].y; }))); }
+    this.nextRound();
+  }
+  nextRound() {
+    this.round++; UI.level(`${this.round}/${this.rounds}`);
+    this.target = pick(this.friends.filter(f => f !== this.target));
+    UI.say(`Where is ${this.target.group.userData.name}? 🤔`); Audio.speak(`Where is ${this.target.group.userData.name}?`); this.locked = false;
+  }
+  async tap(g) {
+    const f = this.friends.find(x => x.group === g); this.locked = true;
+    if (f === this.target) {
+      Audio.good(); f.play('jump'); f.label.visible = true; UI.say(`Yes! That's ${f.group.userData.name}! 🎉`); Audio.speak(`Yes! That's ${f.group.userData.name}!`);
+      this.parts.push(...confetti(this.stage, this.group, 20, g.position.clone()));
+      await this.sleep(1600); f.label.visible = false;
+      if (this.round >= this.rounds) this.finish(this.misses === 0 ? 3 : this.misses <= 2 ? 2 : 1, `You know all ${this.n} friends!`); else this.nextRound();
+    } else {
+      this.misses++; Audio.tap(); f.play('sad'); f.label.visible = true; UI.say(`That's ${f.group.userData.name}. Find ${this.target.group.userData.name}!`); Audio.speak(`That's ${f.group.userData.name}. Where is ${this.target.group.userData.name}?`);
+      await this.sleep(1500); f.label.visible = false; this.locked = false;
+    }
+  }
+  update(dt, t) { super.update(dt, t); for (const f of this.friends) f.update(dt, t); }
+}
+
 /* ================= Registry & App ================= */
 const BANDS = [
   { id: 'baby', label: 'Babies', age: '0–2', emoji: '👶', color: 0xff6f9c },
@@ -1370,6 +1585,7 @@ const BANDS = [
   { id: 'kid', label: 'Kids', age: '4–7', emoji: '🦸', color: 0x2fb5f0 },
   { id: 'big', label: 'Big Kids', age: '7–12', emoji: '🧠', color: 0x7c5cff },
   { id: 'adult', label: 'Adults', age: '13+', emoji: '🧑', color: 0x1f6f8b },
+  { id: 'bo', label: "Bo's World", age: 'all ages', emoji: '💙', color: 0x0ea5a5 },
 ];
 const GAMES = [
   { id: 'bubbles', title: 'Bubble Pop', emoji: '🫧', band: 'baby', skill: 'Cause & effect · visual tracking', cls: BubblePop, levels: 8 },
@@ -1390,6 +1606,10 @@ const GAMES = [
   { id: 'stroop', title: 'Stroop', emoji: '🎨', band: 'adult', skill: 'Inhibition · processing speed', cls: Stroop, levels: 8, hideMascot: true },
   { id: 'chain', title: 'Mental Chain', emoji: '🔗', band: 'adult', skill: 'Working memory · arithmetic', cls: MentalChain, levels: 8, hideMascot: true },
   { id: 'schulte', title: 'Schulte Table', emoji: '🔢', band: 'adult', skill: 'Attention · peripheral vision', cls: Schulte, levels: 8, hideMascot: true },
+  { id: 'bosays', title: 'Bo Says', emoji: '🎬', band: 'bo', skill: 'Sequence memory · copying moves', cls: BoSays, levels: 8, hideMascot: true },
+  { id: 'look', title: 'Copy the Look', emoji: '🎩', band: 'bo', skill: 'Visual memory · details', cls: CopyLook, levels: 8, hideMascot: true },
+  { id: 'feed', title: 'Feed Bo', emoji: '🍎', band: 'bo', skill: 'Listening · words · motor skills', cls: FeedBo, levels: 8, hideMascot: true },
+  { id: 'whoswho', title: "Who's Who", emoji: '👋', band: 'bo', skill: 'Name–face memory', cls: WhosWho, levels: 8, hideMascot: true },
 ];
 
 const App = {
