@@ -4,12 +4,13 @@ Playful 3D memory & brain games for children, grouped by age. Installable PWA, w
 
 | Age band | Games | Skill |
 |---|---|---|
-| Babies 0–2 | Bubble Pop, Peekaboo Pip | cause & effect, tracking, object permanence |
-| Toddlers 2–4 | Shape Sorter, Match Pairs | shape matching, fine motor, visual memory |
-| Kids 4–7 | Follow the Lights, What's Missing? | sequence memory, attention & recall |
-| Big Kids 7–12 | Memory Grid, Number Recall | spatial working memory, digit span (forward & backward) |
+| Babies 0–2 | Bubble Pop, Peekaboo Pip, Find the Animal | cause & effect, tracking, object permanence, first words |
+| Toddlers 2–4 | Shape Sorter, Match Pairs, How Many? | shape matching, fine motor, visual memory, counting |
+| Kids 4–7 | Follow the Lights, What's Missing?, Odd One Out, Catch the Fruit | sequence memory, attention & recall, discrimination, impulse control |
+| Big Kids 7–12 | Memory Grid, Number Recall, Math Pop, Spin Match | spatial working memory, digit span, arithmetic, mental rotation |
+| Adults 13+ | N-Back, Stroop, Mental Chain, Schulte Table | working memory, inhibition, chained arithmetic, attention |
 
-Each game has 8 levels; stars and best level are saved on the device.
+Bo, an original 3D cartoon mascot, hosts the home screen and reacts in the kids' games. Each game has 8 levels; stars and best level are saved on the device.
 
 ## Run locally
 ```bash

@@ -63,13 +63,14 @@ const Audio = {
     const s = this.ctx.createBufferSource(), g = this.ctx.createGain(), f = this.ctx.createBiquadFilter();
     f.type = 'bandpass'; f.frequency.value = 1800; s.buffer = buf; g.gain.value = vol; s.connect(f); f.connect(g); g.connect(this.master); s.start(t0);
   },
+  emit(ev) { if (this.onEvent) this.onEvent(ev); },
   pop() { this.tone(rand(500, 900), 0.12, 'sine', 0.5, 0, 400); this.noise(0.06, 0.25); },
   tap() { this.tone(660, 0.08, 'triangle', 0.35); },
-  ding() { this.tone(880, 0.25, 'sine', 0.5); this.tone(1320, 0.35, 'sine', 0.35, 0.08); },
-  good() { [523, 659, 784].forEach((f, i) => this.tone(f, 0.18, 'triangle', 0.45, i * 0.09)); },
-  cheer() { [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.35, 'triangle', 0.4, i * 0.1)); this.tone(1568, 0.6, 'sine', 0.3, 0.5); },
-  oops() { this.tone(300, 0.25, 'sawtooth', 0.18, 0, -120); },
-  whoosh() { this.noise(0.25, 0.18); },
+  ding() { this.emit('good'); this.tone(880, 0.25, 'sine', 0.5); this.tone(1320, 0.35, 'sine', 0.35, 0.08); },
+  good() { this.emit('good'); [523, 659, 784].forEach((f, i) => this.tone(f, 0.18, 'triangle', 0.45, i * 0.09)); },
+  cheer() { this.emit('cheer'); [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.35, 'triangle', 0.4, i * 0.1)); this.tone(1568, 0.6, 'sine', 0.3, 0.5); },
+  oops() { this.emit('oops'); this.tone(300, 0.25, 'sawtooth', 0.18, 0, -120); },
+  whoosh() { this.emit('wow'); this.noise(0.25, 0.18); },
   note(i, dur = 0.35) { const scale = [262, 294, 330, 392, 440, 523, 587, 659, 784]; this.tone(scale[i % scale.length] * (1 + Math.floor(i / scale.length)), dur, 'triangle', 0.45); },
   speak(text) {
     if (!this.on || !('speechSynthesis' in window)) return;
@@ -107,6 +108,7 @@ class Stage {
     this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     this.game = null; this.drag = null; this.paused = false;
     this.buildBackdrop();
+    this.mascot = new Mascot(0x3fc1ff); this.scene.add(this.mascot.group); this.mascotMode = 'home';
     this.clock = new THREE.Clock();
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 250));
@@ -147,6 +149,14 @@ class Stage {
     this.camera.lookAt(0, 0, 0);
     this.camera.updateProjectionMatrix();
     this.viewW = 2 * d * tan * this.camera.aspect; this.viewH = 2 * d * tan; // visible world size at z=0 (approx)
+    this.placeMascot();
+  }
+  /* home: big, bottom-right; game: small, bottom-left corner, in front of the play area but never pickable */
+  placeMascot() {
+    if (!this.mascot) return;
+    const portrait = this.viewH > this.viewW;
+    if (this.mascotMode === 'home') this.mascot.place(portrait ? 0 : this.viewW * 0.28, -this.viewH / 2 + (portrait ? 3.2 : 2.6), 2, portrait ? 0.95 : 1.1);
+    else this.mascot.place(-this.viewW / 2 + 1.25, -this.viewH / 2 + 1.55, 3, 0.5);
   }
   /* pointer → world point on z=0 plane and raycast hit */
   pointerInfo(e) {
@@ -198,6 +208,7 @@ class Stage {
     const dt = Math.min(this.clock.getDelta() * 1000, 60), t = this.clock.elapsedTime;
     Tween.update(dt);
     for (const m of this.backdrop.children) { const v = m.userData.v; m.rotation.x += v.rx * dt / 1000; m.rotation.y += v.ry * dt / 1000; m.position.y = v.y0 + Math.sin(t * v.fy + v.ph) * 1.2; }
+    if (this.mascot.group.visible) this.mascot.update(dt, t);
     if (this.game && this.game.alive) { try { this.game.update(dt, t); } catch (err) { console.error(err); } }
     this.renderer.render(this.scene, this.camera);
   }
@@ -240,7 +251,7 @@ function emojiTexture(emoji, bg = '#ffffff', size = 256) {
 function textTexture(text, bg = '#ffffff', fg = '#1f1b3a', size = 256) {
   const key = 'T' + text + bg + fg; if (texCache.has(key)) return texCache.get(key);
   const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
-  g.fillStyle = bg; g.fillRect(0, 0, size, size);
+  if (bg !== 'rgba(0,0,0,0)') { g.fillStyle = bg; g.fillRect(0, 0, size, size); }
   g.fillStyle = fg; g.font = `bold ${size * 0.6}px Fredoka, Nunito, system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, size / 2, size / 2 + size * 0.03);
   const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; texCache.set(key, t); return t;
 }
@@ -400,7 +411,7 @@ class Peekaboo extends Game {
     const cfg = [{ cups: 2, sw: 0, spd: 900 }, { cups: 2, sw: 2, spd: 850 }, { cups: 3, sw: 2, spd: 850 }, { cups: 3, sw: 4, spd: 650 }, { cups: 3, sw: 6, spd: 520 }, { cups: 4, sw: 6, spd: 520 }, { cups: 4, sw: 8, spd: 420 }, { cups: 4, sw: 10, spd: 360 }];
     this.cfg = cfg[Math.min(this.level, 8) - 1]; this.round = 0; this.rounds = 5; this.misses = 0;
     const floor = new THREE.Mesh(new THREE.CircleGeometry(14, 48), mat(0xffffff, { transparent: true, opacity: 0.25 })); floor.rotation.x = -Math.PI / 2; floor.position.y = -1.35; this.group.add(floor);
-    this.buddy = makeBuddy(pick(PALETTE)); this.buddy.visible = false; this.group.add(this.buddy);
+    this.pip = new Mascot(pick(PALETTE)); this.pip.place(0, 0, 0, 0.62); this.pip.group.userData.y0 = undefined; this.buddy = this.pip.group; this.buddy.visible = false; this.group.add(this.buddy);
     this.cups = [];
     const n = this.cfg.cups, spacing = n > 3 ? 3.1 : 3.8;
     for (let i = 0; i < n; i++) {
@@ -464,7 +475,7 @@ class Peekaboo extends Game {
   }
   update(dt, t) {
     super.update(dt, t);
-    if (this.buddy.visible) this.buddy.rotation.y = Math.sin(t * 3) * 0.25;
+    if (this.buddy.visible) { const y = this.buddy.position.y; this.pip.update(dt, t); this.buddy.position.y = y; }
     for (const c of this.cups) { c.userData.shadow.position.x = c.position.x; c.userData.shadow.position.z = c.position.z; c.userData.shadow.scale.setScalar(1 - c.position.y * 0.15); }
   }
 }
@@ -771,30 +782,609 @@ class NumberRecall extends Game {
   }
 }
 
+
+/* =====================================================================
+   Mascot "Bo" — an original 3D cartoon character with moods & animations.
+   Lives on the home screen and in the corner of every game, reacting to play.
+   ===================================================================== */
+class Mascot {
+  constructor(color = 0x3fc1ff) {
+    const g = this.group = new THREE.Group(); this.color = color;
+    const skin = mat(color, { roughness: .4 }), dark = mat(0x222244, { roughness: .3 }), white = mat(0xffffff, { roughness: .2 });
+    // body + belly
+    this.body = new THREE.Mesh(new THREE.SphereGeometry(0.95, 32, 24), skin); this.body.scale.set(1, 0.85, 0.9); this.body.position.y = -1.0; g.add(this.body);
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.62, 24, 18), mat(0xfff3c4, { roughness: .6 })); belly.position.set(0, -1.05, 0.55); belly.scale.set(1, 0.85, 0.45); g.add(belly);
+    // head
+    this.head = new THREE.Group(); this.head.position.y = 0.55; g.add(this.head);
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(1.05, 32, 24), skin); skull.scale.set(1.08, 1, 1); this.head.add(skull);
+    // ears (on little stalks) — makes it an "original" character rather than a plain blob
+    for (const sx of [-1, 1]) {
+      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.55, 10), skin); stalk.position.set(sx * 0.75, 0.95, 0); stalk.rotation.z = -sx * 0.5; this.head.add(stalk);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), mat(0xffd93d, { roughness: .35 })); tip.position.set(sx * 0.9, 1.2, 0); this.head.add(tip);
+    }
+    // eyes: white, pupil, highlight; eyelids for blinking
+    this.pupils = []; this.lids = [];
+    for (const sx of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 16), white); eye.position.set(sx * 0.4, 0.12, 0.85); this.head.add(eye);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 12), dark); pupil.position.set(sx * 0.4, 0.12, 1.1); this.head.add(pupil); this.pupils.push(pupil);
+      const hi = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), white); hi.position.set(sx * 0.4 + 0.06, 0.2, 1.22); this.head.add(hi);
+      const lid = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 16, 0, Math.PI * 2, 0, Math.PI / 2), skin); lid.position.set(sx * 0.4, 0.12, 0.86); lid.scale.y = 0.01; this.head.add(lid); this.lids.push(lid);
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.1), dark); brow.position.set(sx * 0.4, 0.55, 1.0); brow.userData.sx = sx; this.head.add(brow); (this.brows = this.brows || []).push(brow);
+      const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), mat(0xff8aa0, { roughness: .8 })); cheek.position.set(sx * 0.62, -0.18, 0.78); cheek.scale.z = 0.35; this.head.add(cheek);
+    }
+    // mouths: smile, big grin, frown, "o" — one visible at a time
+    this.mouths = {
+      happy: new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.06, 8, 20, Math.PI), mat(0x662233)),
+      grin: new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0x662233)),
+      sad: new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.06, 8, 20, Math.PI), mat(0x662233)),
+      wow: new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 12), mat(0x662233)),
+    };
+    this.mouths.happy.rotation.z = Math.PI; this.mouths.happy.position.set(0, -0.3, 0.95);
+    this.mouths.grin.position.set(0, -0.22, 0.9); this.mouths.grin.scale.set(1, 0.9, 0.5);
+    this.mouths.sad.position.set(0, -0.5, 0.95);
+    this.mouths.wow.position.set(0, -0.38, 0.95); this.mouths.wow.scale.set(1, 1.3, 0.5);
+    for (const m of Object.values(this.mouths)) { m.visible = false; this.head.add(m); }
+    // arms with hands, pivot at shoulder
+    this.arms = [];
+    for (const sx of [-1, 1]) {
+      const pivot = new THREE.Group(); pivot.position.set(sx * 0.85, -0.7, 0.1);
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.8, 12), skin); arm.position.y = -0.35; pivot.add(arm);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 12), skin); hand.position.y = -0.8; pivot.add(hand);
+      pivot.rotation.z = sx * 0.35; pivot.userData.sx = sx; g.add(pivot); this.arms.push(pivot);
+    }
+    // feet
+    for (const sx of [-1, 1]) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), mat(0xffd93d, { roughness: .5 })); f.position.set(sx * 0.45, -1.85, 0.25); f.scale.set(1, 0.5, 1.3); g.add(f); }
+    this.mood = 'happy'; this.setMood('happy'); this.t = 0; this.blinkT = 2; this.anim = null; this.animT = 0; this.lookX = 0; this.lookY = 0;
+  }
+  setMood(m) { this.mood = m; for (const k in this.mouths) this.mouths[k].visible = k === m; const tilt = m === 'sad' ? 0.35 : m === 'wow' ? -0.25 : m === 'grin' ? -0.1 : 0; for (const b of this.brows) { b.rotation.z = b.userData.sx * tilt; b.position.y = m === 'wow' ? 0.65 : 0.55; } }
+  /* one-shot animations: 'wave' | 'jump' | 'sad' | 'wow' */
+  play(name) { this.anim = name; this.animT = 0; if (name === 'jump') this.setMood('grin'); if (name === 'sad') this.setMood('sad'); if (name === 'wow') this.setMood('wow'); if (name === 'wave') this.setMood('happy'); }
+  update(dt, t) {
+    const s = dt / 1000; this.t += s;
+    // idle breathing + bob
+    const breathe = 1 + Math.sin(this.t * 2.2) * 0.025; this.body.scale.set(1 * breathe, 0.85 / breathe, 0.9 * breathe);
+    if (this.group.userData.y0 !== undefined && !this.anim) this.group.position.y = this.group.userData.y0 + Math.sin(this.t * 1.8) * 0.06;
+    this.head.rotation.z = Math.sin(this.t * 1.1) * 0.06; this.head.rotation.y = Math.sin(this.t * 0.7) * 0.15;
+    // blinking
+    this.blinkT -= s; if (this.blinkT < 0) { this.blinkT = rand(2, 5); this.blinking = 0.18; }
+    if (this.blinking !== undefined) { this.blinking -= s; const k = this.blinking > 0 ? Math.sin((0.18 - this.blinking) / 0.18 * Math.PI) : 0; for (const l of this.lids) l.scale.y = Math.max(0.01, k); if (this.blinking <= 0) this.blinking = undefined; }
+    // eyes drift / follow
+    for (const p of this.pupils) { p.position.x += ((p.position.x < 0 ? -0.4 : 0.4) + this.lookX * 0.1 - p.position.x) * 0.1; p.position.y += (0.12 + this.lookY * 0.1 - p.position.y) * 0.1; }
+    // arms default sway
+    for (const a of this.arms) { a.rotation.z = a.userData.sx * (0.35 + Math.sin(this.t * 1.8 + a.userData.sx) * 0.08); a.rotation.x = 0; }
+    if (!this.anim) return;
+    this.animT += s; const T = this.animT;
+    if (this.anim === 'wave') { const a = this.arms[1]; a.rotation.z = -2.6 + Math.sin(T * 14) * 0.45; if (T > 1.6) this.anim = null; }
+    else if (this.anim === 'jump') {
+      const dur = 1.1, p = Math.min(T / dur, 1), hops = Math.abs(Math.sin(p * Math.PI * 2)) * 0.9;
+      this.group.position.y = (this.group.userData.y0 || 0) + hops; const sq = 1 + Math.sin(p * Math.PI * 4) * 0.08; this.group.scale.set(this.baseScale / sq, this.baseScale * sq, this.baseScale / sq);
+      for (const a of this.arms) a.rotation.z = a.userData.sx * (2.5 + Math.sin(T * 12) * 0.3);
+      if (p >= 1) { this.anim = null; this.group.scale.setScalar(this.baseScale); this.setMood('happy'); }
+    }
+    else if (this.anim === 'sad') { this.head.rotation.z = Math.sin(T * 6) * 0.12; this.head.rotation.x = 0.25; if (T > 1.5) { this.anim = null; this.head.rotation.x = 0; this.setMood('happy'); } }
+    else if (this.anim === 'wow') { this.head.rotation.x = -0.15; for (const a of this.arms) a.rotation.z = a.userData.sx * 1.2; if (T > 1.2) { this.anim = null; this.head.rotation.x = 0; this.setMood('happy'); } }
+  }
+  place(x, y, z, scale) { this.group.position.set(x, y, z); this.group.userData.y0 = y; this.baseScale = scale; this.group.scale.setScalar(scale); }
+}
+
+/* ================= shared helpers for the second batch of games ================= */
+/* centred grid positions: count items in rows of `cols`, spaced sx/sy, centred on (0, cy) */
+function gridLayout(count, cols, sx, sy, cy = 0) {
+  const rows = Math.ceil(count / cols), out = [];
+  for (let i = 0; i < count; i++) {
+    const r = Math.floor(i / cols), inRow = r === rows - 1 ? count - r * cols : cols, c = i - r * cols;
+    out.push({ x: (c - (inRow - 1) / 2) * sx, y: cy + ((rows - 1) / 2 - r) * sy });
+  }
+  return out;
+}
+/* a thin rounded tile with an emoji or text on the front face */
+function tile(tex, color = 0xffffff, w = 2.2, h = 2.2, d = 0.4) {
+  const side = mat(color, { roughness: .5 });
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, side, side, new THREE.MeshStandardMaterial({ map: tex, roughness: .5 }), side]);
+  m.add(new THREE.Mesh(new THREE.SphereGeometry(Math.max(w, h) * 0.7, 8, 6), HIT_MAT()));
+  return m;
+}
+const wobble = (o, t, i = 0, amp = 0.25) => { o.rotation.y = Math.sin(t * 1.6 + i) * amp; o.rotation.x = Math.sin(t * 1.1 + i * 1.3) * amp * 0.5; };
+
+/* =====================================================================
+   GAME 9 · Find the Animal (babies) — listening, words, recognition
+   ===================================================================== */
+const ANIMALS = [['dog', '🐶'], ['cat', '🐱'], ['cow', '🐮'], ['pig', '🐷'], ['frog', '🐸'], ['lion', '🦁'], ['monkey', '🐵'], ['chicken', '🐔'], ['duck', '🦆'], ['fish', '🐟'], ['bear', '🐻'], ['rabbit', '🐰']];
+class FindAnimal extends Game {
+  start() {
+    this.stage.fit(12.5, 13);
+    const n = [2, 2, 3, 3, 4, 4, 6, 6][Math.min(this.level, 8) - 1];
+    this.set = shuffle(ANIMALS).slice(0, n); this.round = 0; this.rounds = 5; this.misses = 0; this.tiles = []; this.target = null;
+    const cols = n <= 3 ? n : n === 4 ? 2 : 3, pos = gridLayout(n, cols, 3.6, 3.6, 0.4);
+    this.set.forEach((a, i) => {
+      const m = tile(emojiTexture(a[1], '#fff7e6'), PALETTE[i % PALETTE.length], 3, 3, 0.6);
+      m.position.set(pos[i].x, pos[i].y, 0); m.userData.a = a; m.scale.setScalar(0.01);
+      Tween.to(m.scale, { x: 1, y: 1, z: 1 }, 400, Ease.back, i * 90);
+      this.pickable(m, { tap: o => this.tap(o) }); this.group.add(m); this.tiles.push(m);
+    });
+    setTimeout(() => this.alive && this.nextRound(), 900);
+  }
+  nextRound() {
+    this.round++; UI.level(`Round ${this.round}/${this.rounds}`);
+    this.target = pick(this.set.filter(a => a !== this.target));
+    UI.say(`Where is the ${this.target[0]}? ${this.target[1]}`); Audio.speak(`Where is the ${this.target[0]}?`);
+    this.locked = false;
+  }
+  async tap(m) {
+    const a = m.userData.a; this.locked = true;
+    if (a === this.target) {
+      Audio.good(); UI.say(`Yes! The ${a[0]}! ${a[1]} 🎉`); Audio.speak(`Yes! The ${a[0]}!`);
+      this.parts.push(...confetti(this.stage, this.group, 25, m.position.clone()));
+      this.tw(m.position, { z: 1.5 }, 200).then(() => this.tw(m.position, { z: 0 }, 400, Ease.bounce));
+      await this.sleep(1600);
+      if (this.round >= this.rounds) this.finish(this.misses === 0 ? 3 : this.misses <= 2 ? 2 : 1, 'You know your animals!'); else this.nextRound();
+    } else {
+      this.misses++; Audio.tap(); UI.say(`That's the ${a[0]} ${a[1]}. Find the ${this.target[0]}! ${this.target[1]}`); Audio.speak(`That's the ${a[0]}. Where is the ${this.target[0]}?`);
+      this.tw(m.rotation, { z: 0.2 }, 90).then(() => this.tw(m.rotation, { z: -0.2 }, 90)).then(() => this.tw(m.rotation, { z: 0 }, 90));
+      await this.sleep(900); this.locked = false;
+    }
+  }
+  update(dt, t) { super.update(dt, t); this.tiles.forEach((m, i) => { wobble(m, t, i, 0.18); m.position.y = (m.userData.y0 === undefined ? (m.userData.y0 = m.position.y) : m.userData.y0) + Math.sin(t * 2 + i) * 0.12; }); }
+}
+
+/* =====================================================================
+   GAME 10 · How Many? (toddlers) — counting, number recognition
+   ===================================================================== */
+class HowMany extends Game {
+  start() {
+    this.stage.fit(12.5, 13);
+    this.max = [3, 3, 4, 5, 5, 6, 8, 10][Math.min(this.level, 8) - 1]; this.round = 0; this.rounds = 4; this.mistakes = 0; this.objs = []; this.answers = [];
+    this.nextRound();
+  }
+  clear() { for (const o of this.objs.concat(this.answers)) { this.unpick(o); this.group.remove(o); } this.objs = []; this.answers = []; }
+  nextRound() {
+    this.locked = true; this.round++; UI.level(`Round ${this.round}/${this.rounds}`); this.clear();
+    const n = this.count = randInt(1, this.max), shape = pick(SHAPE_NAMES), color = pick(PALETTE);
+    const cells = shuffle(gridLayout(12, 4, 2.6, 2.4, 1.6)).slice(0, n);
+    cells.forEach((p, i) => {
+      const m = new THREE.Mesh(SHAPES[shape](), mat(color, { roughness: .3 })); m.scale.setScalar(0.75);
+      m.position.set(p.x + rand(-.3, .3), p.y + rand(-.3, .3), 0); m.userData.s = 0.75; m.scale.setScalar(0.01);
+      Tween.to(m.scale, { x: .75, y: .75, z: .75 }, 300, Ease.back, i * 120); this.group.add(m); this.objs.push(m);
+    });
+    const opts = new Set([n]); while (opts.size < 3) opts.add(clamp(n + randInt(-2, 2), 1, Math.max(3, this.max)));
+    shuffle([...opts]).forEach((v, i) => {
+      const m = tile(textTexture(String(v), '#ffffff', '#1f1b3a'), 0xffffff, 2.3, 2.3, 0.6); m.position.set((i - 1) * 3.4, -4.3, 0); m.userData.v = v;
+      m.scale.setScalar(0.01); Tween.to(m.scale, { x: 1, y: 1, z: 1 }, 300, Ease.back, 400 + i * 100);
+      this.pickable(m, { tap: o => this.answer(o) }); this.group.add(m); this.answers.push(m);
+    });
+    UI.say(`How many ${shape}s? Count them! 👆`); Audio.speak('How many? Count them!');
+    setTimeout(() => { this.locked = false; }, 700);
+  }
+  async answer(m) {
+    this.locked = true;
+    if (m.userData.v === this.count) {
+      Audio.good(); UI.say(`Yes! ${this.count}! 🎉`); Audio.speak(`Yes! ${this.count}!`);
+      this.parts.push(...confetti(this.stage, this.group, 25, m.position.clone()));
+      for (let i = 0; i < this.objs.length; i++) { const o = this.objs[i]; this.tw(o.position, { z: 1.2 }, 150, Ease.out, i * 110).then(() => this.tw(o.position, { z: 0 }, 250, Ease.bounce)); Audio.note(i, 0.2); await this.sleep(110); }
+      await this.sleep(1200);
+      if (this.round >= this.rounds) this.finish(this.mistakes === 0 ? 3 : this.mistakes <= 2 ? 2 : 1, 'Super counting!'); else this.nextRound();
+    } else {
+      this.mistakes++; Audio.oops(); UI.say('Count again! 🔢'); Audio.speak('Count again');
+      this.tw(m.rotation, { z: 0.2 }, 90).then(() => this.tw(m.rotation, { z: -0.2 }, 90)).then(() => this.tw(m.rotation, { z: 0 }, 90));
+      await this.sleep(700); this.locked = false;
+    }
+  }
+  update(dt, t) { super.update(dt, t); this.objs.forEach((o, i) => wobble(o, t, i, 0.5)); }
+}
+
+/* =====================================================================
+   GAME 11 · Odd One Out (kids) — visual discrimination, attention
+   ===================================================================== */
+class OddOneOut extends Game {
+  start() {
+    this.stage.fit(13, 13);
+    const L = Math.min(this.level, 8) - 1;
+    this.count = [4, 4, 6, 6, 8, 9, 9, 12][L]; this.modes = L < 2 ? ['color'] : L < 4 ? ['shape'] : L < 6 ? ['color', 'shape'] : ['color', 'shape', 'size', 'tint'];
+    this.round = 0; this.rounds = 5; this.mistakes = 0; this.items = [];
+    this.nextRound();
+  }
+  nextRound() {
+    this.locked = true; this.round++; UI.level(`Round ${this.round}/${this.rounds}`);
+    for (const o of this.items) { this.unpick(o); this.group.remove(o); } this.items = [];
+    const mode = pick(this.modes), shape = pick(SHAPE_NAMES), ci = randInt(0, PALETTE.length - 1), color = PALETTE[ci];
+    let oddShape = shape, oddColor = color, oddScale = 1;
+    if (mode === 'color') oddColor = pick(PALETTE.filter(c => c !== color));
+    if (mode === 'shape') oddShape = pick(SHAPE_NAMES.filter(sn => sn !== shape));
+    if (mode === 'size') oddScale = 0.72;
+    if (mode === 'tint') oddColor = new THREE.Color(color).offsetHSL(0.07, 0, 0).getHex();
+    const cols = this.count <= 4 ? 2 : this.count <= 6 ? 3 : this.count <= 9 ? 3 : 4, pos = gridLayout(this.count, cols, 3, 3, 0.3), oddIdx = randInt(0, this.count - 1);
+    pos.forEach((p, i) => {
+      const odd = i === oddIdx;
+      const m = new THREE.Mesh(SHAPES[odd ? oddShape : shape](), mat(odd ? oddColor : color, { roughness: .3 }));
+      m.position.set(p.x, p.y, 0); m.userData.odd = odd; m.userData.s = odd ? oddScale : 1; m.scale.setScalar(0.01);
+      m.add(new THREE.Mesh(new THREE.SphereGeometry(1.4, 8, 6), HIT_MAT()));
+      Tween.to(m.scale, { x: m.userData.s, y: m.userData.s, z: m.userData.s }, 300, Ease.back, i * 50);
+      this.pickable(m, { tap: o => this.tap(o) }); this.group.add(m); this.items.push(m);
+    });
+    UI.say('Tap the odd one out! 🔍'); if (this.round === 1) Audio.speak('Tap the odd one out');
+    setTimeout(() => { this.locked = false; }, 500);
+  }
+  async tap(m) {
+    if (m.userData.odd) {
+      this.locked = true; Audio.ding(); UI.say(pick(['Found it! 🎉', 'Sharp eyes! 👀', 'Yes! ⭐']));
+      this.parts.push(...confetti(this.stage, this.group, 25, m.position.clone()));
+      this.tw(m.position, { z: 1.5 }, 200).then(() => this.tw(m.position, { z: 0 }, 400, Ease.bounce));
+      await this.sleep(1100);
+      if (this.round >= this.rounds) this.finish(this.mistakes === 0 ? 3 : this.mistakes <= 2 ? 2 : 1, 'Eagle eyes!'); else this.nextRound();
+    } else {
+      this.mistakes++; Audio.oops(); UI.say('Not that one! Look closer 🔍', 1200);
+      this.tw(m.rotation, { z: 0.3 }, 80).then(() => this.tw(m.rotation, { z: -0.3 }, 80)).then(() => this.tw(m.rotation, { z: 0 }, 80));
+    }
+  }
+  update(dt, t) { super.update(dt, t); for (const m of this.items) { m.rotation.y = t * 0.9; } }
+}
+
+/* =====================================================================
+   GAME 12 · Catch the Fruit (kids) — go/no-go, impulse control, speed
+   ===================================================================== */
+const FRUIT = ['🍎', '🍌', '🍓', '🍇', '🍊', '🍉', '🍍', '🥝'], BAD = ['💣', '🪨', '🧦'];
+class CatchFruit extends Game {
+  start() {
+    this.stage.fit(12, 14);
+    this.score = 0; this.timeLeft = 30000; this.items = []; this.spawnT = 0; this.ended = false;
+    this.speed = 2.2 + this.level * 0.35; this.badRate = Math.min(0.45, 0.2 + this.level * 0.03); this.interval = Math.max(380, 900 - this.level * 60);
+    this.target = 10 + this.level * 4;
+    UI.score('🍎 0'); UI.say('Tap the fruit, not the junk! 🍎🚫💣'); Audio.speak('Tap the fruit, not the junk!');
+  }
+  spawn() {
+    const bad = Math.random() < this.badRate, e = bad ? pick(BAD) : pick(FRUIT);
+    const m = tile(emojiTexture(e, bad ? '#e8e8f0' : '#fffbe6'), bad ? 0x777788 : pick(PALETTE), 2.2, 2.2, 0.5);
+    const W = this.stage.viewW / 2 - 1.6;
+    m.position.set(rand(-W, W), -this.stage.viewH / 2 - 1.5, 0); m.userData.bad = bad; m.userData.vy = this.speed * rand(0.85, 1.25); m.userData.spin = rand(-1.5, 1.5);
+    this.pickable(m, { tap: o => this.tap(o) }); this.group.add(m); this.items.push(m);
+  }
+  remove(m) { this.unpick(m); this.group.remove(m); const i = this.items.indexOf(m); if (i >= 0) this.items.splice(i, 1); }
+  tap(m) {
+    if (m.userData.dead) return; m.userData.dead = true;
+    if (m.userData.bad) {
+      this.score = Math.max(0, this.score - 2); Audio.oops(); UI.say('Oh no! Not that! 💥', 900);
+      this.tw(this.group.position, { x: 0.35 }, 50).then(() => this.tw(this.group.position, { x: -0.35 }, 50)).then(() => this.tw(this.group.position, { x: 0 }, 50));
+      this.tw(m.scale, { x: 0.01, y: 0.01, z: 0.01 }, 200, Ease.in).then(() => this.remove(m));
+    } else {
+      this.score++; Audio.pop(); Audio.note(this.score % 9, 0.15);
+      this.parts.push(...confetti(this.stage, this.group, 8, m.position.clone()));
+      this.tw(m.scale, { x: 1.5, y: 1.5, z: 1.5 }, 120).then(() => this.remove(m));
+    }
+    UI.score('🍎 ' + this.score);
+  }
+  update(dt, t) {
+    super.update(dt, t);
+    if (this.ended) return;
+    this.timeLeft -= dt; UI.level(`⏱ ${Math.max(0, Math.ceil(this.timeLeft / 1000))}s`);
+    this.spawnT -= dt; if (this.spawnT <= 0) { this.spawn(); this.spawnT = this.interval; }
+    const H = this.stage.viewH / 2 + 2, s = dt / 1000;
+    for (const m of this.items.slice()) { if (m.userData.dead) continue; m.position.y += m.userData.vy * s; m.rotation.z += m.userData.spin * s; m.rotation.y = Math.sin(t * 2 + m.position.x) * 0.3; if (m.position.y > H) this.remove(m); }
+    if (this.timeLeft <= 0) { this.ended = true; this.locked = true; for (const m of this.items.slice()) this.remove(m); const r = this.score / this.target; this.finish(r >= 1 ? 3 : r >= 0.6 ? 2 : 1, `You caught ${this.score} fruit! (goal ${this.target})`); }
+  }
+}
+
+/* =====================================================================
+   GAME 13 · Math Pop (big kids) — mental arithmetic under light time pressure
+   ===================================================================== */
+class MathPop extends Game {
+  start() {
+    this.stage.fit(12, 13);
+    this.round = 0; this.rounds = 6; this.mistakes = 0; this.bubbles = [];
+    this.nextRound();
+  }
+  question() {
+    const L = Math.min(this.level, 8), ops = L <= 2 ? ['+'] : L <= 4 ? ['+', '-'] : L <= 6 ? ['×'] : ['+', '-', '×'];
+    const op = pick(ops), big = L % 2 === 0 || L >= 7; let a, b, ans;
+    if (op === '+') { a = randInt(1, big ? 20 : 9); b = randInt(1, big ? 20 : 9); ans = a + b; }
+    else if (op === '-') { a = randInt(2, big ? 20 : 10); b = randInt(1, a - 1); ans = a - b; }
+    else { a = randInt(2, big ? 10 : 5); b = randInt(2, big ? 10 : 5); ans = a * b; }
+    return { text: `${a} ${op} ${b} = ?`, ans };
+  }
+  nextRound() {
+    this.locked = true; this.round++; UI.level(`${this.round}/${this.rounds}`);
+    for (const o of this.bubbles) { this.unpick(o); this.group.remove(o); } this.bubbles = [];
+    const q = this.q = this.question();
+    const opts = new Set([q.ans]); while (opts.size < 4) { const d = q.ans + pick([-10, -3, -2, -1, 1, 2, 3, 10]); if (d >= 0 && d !== q.ans) opts.add(d); }
+    const pos = gridLayout(4, 2, 4.2, 4, -0.8);
+    shuffle([...opts]).forEach((v, i) => {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(1.5, 32, 24), mat(PALETTE[(i * 2 + this.round) % PALETTE.length], { roughness: .25 }));
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9), new THREE.MeshBasicMaterial({ map: textTexture(String(v), 'rgba(0,0,0,0)', '#ffffff'), transparent: true })); label.position.z = 1.45; m.add(label);
+      m.add(new THREE.Mesh(new THREE.SphereGeometry(1.9, 8, 6), HIT_MAT()));
+      m.position.set(pos[i].x, pos[i].y, 0); m.userData.v = v; m.userData.ph = rand(0, 6.28); m.userData.y0 = pos[i].y; m.scale.setScalar(0.01);
+      Tween.to(m.scale, { x: 1, y: 1, z: 1 }, 300, Ease.back, i * 80);
+      this.pickable(m, { tap: o => this.answer(o) }); this.group.add(m); this.bubbles.push(m);
+    });
+    UI.say(q.text); if (this.round === 1) Audio.speak('Pop the right answer');
+    setTimeout(() => { this.locked = false; }, 400);
+  }
+  async answer(m) {
+    if (m.userData.v === this.q.ans) {
+      this.locked = true; Audio.pop(); Audio.good(); UI.say(`${this.q.text.replace('?', this.q.ans)} ✅`);
+      this.parts.push(...confetti(this.stage, this.group, 30, m.position.clone()));
+      this.tw(m.scale, { x: 1.6, y: 1.6, z: 1.6 }, 150).then(() => this.tw(m.scale, { x: 0.01, y: 0.01, z: 0.01 }, 150));
+      await this.sleep(1200);
+      if (this.round >= this.rounds) this.finish(this.mistakes === 0 ? 3 : this.mistakes <= 2 ? 2 : 1, 'Maths whizz!'); else this.nextRound();
+    } else {
+      this.mistakes++; Audio.oops(); UI.say(`Not ${m.userData.v}. ${this.q.text}`);
+      this.tw(m.scale, { x: 0.01, y: 0.01, z: 0.01 }, 200, Ease.in).then(() => { this.unpick(m); this.group.remove(m); });
+    }
+  }
+  update(dt, t) { super.update(dt, t); for (const b of this.bubbles) { b.position.y = b.userData.y0 + Math.sin(t * 1.3 + b.userData.ph) * 0.35; b.rotation.y = Math.sin(t + b.userData.ph) * 0.2; } }
+}
+
+/* =====================================================================
+   GAME 14 · Spin Match (big kids) — mental rotation with 3D polycubes
+   ===================================================================== */
+const POLYCUBES = [
+  [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1]],
+  [[0, 0, 0], [1, 0, 0], [2, 0, 0], [2, 1, 0], [2, 1, 1]],
+  [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1], [2, 1, 1]],
+  [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 1, 1], [1, 2, 1]],
+  [[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 1, 0], [0, 1, 1]],
+  [[0, 0, 0], [1, 0, 0], [1, 1, 0], [2, 1, 0], [2, 1, 1], [2, 2, 1]],
+  [[0, 0, 0], [1, 0, 0], [2, 0, 0], [2, 1, 0], [2, 1, 1], [2, 1, 2]],
+];
+const cubeKey = cells => { const mx = Math.min(...cells.map(c => c[0])), my = Math.min(...cells.map(c => c[1])), mz = Math.min(...cells.map(c => c[2])); return cells.map(c => [c[0] - mx, c[1] - my, c[2] - mz]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]).map(c => c.join(',')).join('|'); };
+const rotX = c => [c[0], -c[2], c[1]], rotY = c => [c[2], c[1], -c[0]], rotZ = c => [-c[1], c[0], c[2]];
+function allRotations(cells) {
+  const out = new Set(); let a = cells;
+  for (let i = 0; i < 4; i++) { let b = a; for (let j = 0; j < 4; j++) { let c = b; for (let k = 0; k < 4; k++) { out.add(cubeKey(c)); c = c.map(rotZ); } b = b.map(rotY); } a = a.map(rotX); }
+  return out;
+}
+const isChiral = cells => !allRotations(cells).has(cubeKey(cells.map(c => [-c[0], c[1], c[2]])));
+const CHIRAL = POLYCUBES.filter(isChiral);
+class SpinMatch extends Game {
+  start() {
+    this.stage.fit(13, 13);
+    const L = Math.min(this.level, 8) - 1;
+    this.nCand = L < 2 ? 2 : 3; this.pool = CHIRAL.filter(c => L < 3 ? c.length <= 5 : L < 6 ? c.length <= 6 : true);
+    this.round = 0; this.rounds = 5; this.mistakes = 0; this.objs = [];
+    this.nextRound();
+  }
+  build(cells, color) {
+    const g = new THREE.Group(), inner = new THREE.Group(), u = 0.8, geo = new THREE.BoxGeometry(u * 0.96, u * 0.96, u * 0.96), m = mat(color, { roughness: .4 });
+    const cx = cells.reduce((s, c) => s + c[0], 0) / cells.length, cy = cells.reduce((s, c) => s + c[1], 0) / cells.length, cz = cells.reduce((s, c) => s + c[2], 0) / cells.length;
+    for (const c of cells) { const b = new THREE.Mesh(geo, m); b.position.set((c[0] - cx) * u, (c[1] - cy) * u, (c[2] - cz) * u); inner.add(b); }
+    g.add(inner); g.userData.inner = inner; g.add(new THREE.Mesh(new THREE.SphereGeometry(2.1, 8, 6), HIT_MAT()));
+    return g;
+  }
+  nextRound() {
+    this.locked = true; this.round++; UI.level(`Round ${this.round}/${this.rounds}`);
+    for (const o of this.objs) { this.unpick(o); this.group.remove(o); } this.objs = [];
+    const cells = pick(this.pool), mirror = cells.map(c => [-c[0], c[1], c[2]]), color = pick(PALETTE);
+    this.targetObj = this.build(cells, color); this.targetObj.position.set(0, 3.6, 0); this.group.add(this.targetObj); this.objs.push(this.targetObj);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(2.4, 0.07, 8, 48), mat(0xffffff)); ring.position.set(0, 3.6, -1); this.group.add(ring); this.objs.push(ring);
+    const xs = this.nCand === 2 ? [-2.6, 2.6] : [-4.2, 0, 4.2], rightIdx = randInt(0, this.nCand - 1);
+    for (let i = 0; i < this.nCand; i++) {
+      const o = this.build(i === rightIdx ? cells : mirror, color);
+      o.userData.inner.rotation.set(randInt(0, 3) * Math.PI / 2, randInt(0, 3) * Math.PI / 2, randInt(0, 3) * Math.PI / 2);
+      o.position.set(xs[i], -2.4, 0); o.userData.right = i === rightIdx; o.userData.ph = rand(0, 6.28); o.scale.setScalar(0.01);
+      Tween.to(o.scale, { x: 1, y: 1, z: 1 }, 300, Ease.back, i * 100);
+      this.pickable(o, { tap: m => this.choose(m) }); this.group.add(o); this.objs.push(o);
+    }
+    UI.say('Which one is the SAME shape as the top one? (Not a mirror!) 🔄'); if (this.round === 1) Audio.speak('Which one is the same shape as the top one? Careful, some are mirror images.');
+    setTimeout(() => { this.locked = false; }, 500);
+  }
+  async choose(o) {
+    if (o.userData.right) {
+      this.locked = true; Audio.good(); UI.say('Yes! Same shape! 🎉');
+      this.parts.push(...confetti(this.stage, this.group, 30, o.position.clone()));
+      await this.sleep(1200);
+      if (this.round >= this.rounds) this.finish(this.mistakes === 0 ? 3 : this.mistakes <= 2 ? 2 : 1, 'Master of rotation!'); else this.nextRound();
+    } else {
+      this.mistakes++; Audio.oops(); UI.say('That one is a mirror image! Try again 🪞', 1500);
+      this.tw(o.position, { x: o.position.x + 0.3 }, 60).then(() => this.tw(o.position, { x: o.position.x - 0.6 }, 60)).then(() => this.tw(o.position, { x: o.position.x + 0.3 }, 60));
+    }
+  }
+  update(dt, t) { super.update(dt, t); for (const o of this.objs) if (o.userData.inner) { o.rotation.y = t * 0.6 + (o.userData.ph || 0); o.rotation.x = Math.sin(t * 0.5 + (o.userData.ph || 0)) * 0.35; } }
+}
+
+
+/* a wide text texture for words/phrases (auto-fits the font to the width) */
+function wordTexture(text, bg = '#ffffff', fg = '#1f1b3a') {
+  const key = 'W' + text + bg + fg; if (texCache.has(key)) return texCache.get(key);
+  const w = 512, h = 256, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  if (bg !== 'rgba(0,0,0,0)') { g.fillStyle = bg; g.fillRect(0, 0, w, h); }
+  let size = 150; g.font = `bold ${size}px Fredoka, Nunito, system-ui, sans-serif`;
+  while (g.measureText(text).width > w * 0.88 && size > 30) { size -= 6; g.font = `bold ${size}px Fredoka, Nunito, system-ui, sans-serif`; }
+  g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + size * 0.05);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; texCache.set(key, t); return t;
+}
+const flashTile = (m, color, ms = 250) => { const side = m.material[0], old = side.color.clone(); side.color.set(color).convertSRGBToLinear(); setTimeout(() => side.color.copy(old), ms); };
+
+/* =====================================================================
+   GAME 15 · N-Back (adults) — the classic working-memory trainer
+   ===================================================================== */
+const NB_COLORS = [0xff5e7a, 0x3fc1ff, 0xffd93d, 0x6bd968];
+class NBack extends Game {
+  start() {
+    this.stage.fit(12, 14);
+    const L = Math.min(this.level, 8) - 1;
+    this.n = [1, 1, 2, 2, 2, 3, 3, 3][L]; this.dual = L >= 3; this.trials = 16 + this.n * 2; this.showMs = Math.max(900, 1500 - L * 60); this.gapMs = 900;
+    this.hits = 0; this.fa = 0; this.misses = 0; this.i = -1; this.answered = { pos: false, col: false }; this.ended = false;
+    this.cells = gridLayout(9, 3, 2.4, 2.4, 2.2);
+    this.cells.forEach(p => { const c = new THREE.Mesh(new THREE.BoxGeometry(2.1, 2.1, 0.25), mat(0xffffff, { transparent: true, opacity: 0.35, roughness: .8 })); c.position.set(p.x, p.y, -0.3); this.group.add(c); });
+    this.dot = new THREE.Mesh(new THREE.SphereGeometry(0.8, 28, 20), mat(NB_COLORS[0], { roughness: .3 })); this.dot.visible = false; this.group.add(this.dot);
+    // sequence with ~1/3 planned matches
+    this.seq = [];
+    for (let k = 0; k < this.trials; k++) {
+      let p = randInt(0, 8), c = this.dual ? randInt(0, 3) : 0;
+      if (k >= this.n) { if (Math.random() < 0.33) p = this.seq[k - this.n].p; else if (p === this.seq[k - this.n].p) p = (p + 1) % 9; if (this.dual) { if (Math.random() < 0.33) c = this.seq[k - this.n].c; else if (c === this.seq[k - this.n].c) c = (c + 1) % 4; } }
+      this.seq.push({ p, c });
+    }
+    this.btnPos = this.makeBtn('POSITION', this.dual ? -3 : 0, 'pos'); if (this.dual) this.btnCol = this.makeBtn('COLOUR', 3, 'col');
+    UI.score('✔ 0  ✖ 0');
+    UI.say(this.dual ? `Dual ${this.n}-back: tap when the POSITION or COLOUR matches ${this.n} step${this.n > 1 ? 's' : ''} back` : `${this.n}-back: tap POSITION when the spot is where it was ${this.n} step${this.n > 1 ? 's' : ''} back`);
+    setTimeout(() => this.alive && this.run(), 2500);
+  }
+  makeBtn(label, x, key) { const m = tile(wordTexture(label, '#ffffff', '#1f1b3a'), 0xdcdcee, 5.4, 2.0, 0.5); m.position.set(x, -4.6, 0); m.userData.key = key; this.pickable(m, { tap: o => this.press(o) }); this.group.add(m); return m; }
+  press(m) {
+    const key = m.userData.key; if (this.i < 0 || this.answered[key] || this.ended) return;
+    this.answered[key] = true;
+    const match = this.i >= this.n && (key === 'pos' ? this.seq[this.i].p === this.seq[this.i - this.n].p : this.seq[this.i].c === this.seq[this.i - this.n].c);
+    if (match) { this.hits++; Audio.ding(); flashTile(m, 0x6bd968); } else { this.fa++; Audio.oops(); flashTile(m, 0xff5e7a); }
+    UI.score(`✔ ${this.hits}  ✖ ${this.fa + this.misses}`);
+  }
+  async run() {
+    for (let k = 0; k < this.trials && this.alive; k++) {
+      this.i = k; this.answered = { pos: false, col: false }; UI.level(`${k + 1}/${this.trials}`);
+      const st = this.seq[k]; this.dot.position.set(this.cells[st.p].x, this.cells[st.p].y, 0.6); this.dot.material.color.copy(srgb(NB_COLORS[st.c])); this.dot.visible = true; this.dot.scale.setScalar(0.01);
+      this.tw(this.dot.scale, { x: 1, y: 1, z: 1 }, 180, Ease.back); Audio.tap();
+      await this.sleep(this.showMs); this.dot.visible = false; await this.sleep(this.gapMs);
+      if (k >= this.n) {
+        const pm = st.p === this.seq[k - this.n].p, cm = this.dual && st.c === this.seq[k - this.n].c;
+        if (pm && !this.answered.pos) { this.misses++; flashTile(this.btnPos, 0xffd93d, 300); }
+        if (cm && !this.answered.col) { this.misses++; flashTile(this.btnCol, 0xffd93d, 300); }
+        UI.score(`✔ ${this.hits}  ✖ ${this.fa + this.misses}`);
+      }
+    }
+    if (!this.alive) return; this.ended = true;
+    const total = this.hits + this.misses + this.fa, acc = total ? this.hits / total : 1;
+    this.finish(acc >= 0.85 ? 3 : acc >= 0.6 ? 2 : 1, `${this.n}-back · ${this.hits} hits, ${this.misses} missed, ${this.fa} false alarms (${Math.round(acc * 100)}%)`);
+  }
+}
+
+/* =====================================================================
+   GAME 16 · Stroop (adults) — inhibition: tap the ink colour, not the word
+   ===================================================================== */
+const STROOP = [['RED', 0xff3b5c], ['BLUE', 0x2f7cff], ['GREEN', 0x2ec267], ['YELLOW', 0xffd000], ['PURPLE', 0x9b5cff], ['ORANGE', 0xff8a2a]];
+class Stroop extends Game {
+  start() {
+    this.stage.fit(12.5, 13);
+    const L = Math.min(this.level, 8) - 1;
+    this.set = STROOP.slice(0, L < 4 ? 4 : 6); this.trials = 20; this.congruent = Math.max(0.15, 0.5 - L * 0.05); this.i = 0; this.mistakes = 0; this.times = []; this.ended = false;
+    this.word = null; this.pads = [];
+    const pos = gridLayout(this.set.length, this.set.length <= 4 ? 4 : 3, 3.0, 2.9, this.set.length <= 4 ? -2.6 : -2.8);
+    this.set.forEach((c, i) => { const m = new THREE.Mesh(roundedBoxGeo(2.6, 2.3, 0.7, 0.45), mat(c[1], { roughness: .35 })); m.position.set(pos[i].x, pos[i].y, 0); m.userData.c = c; this.pickable(m, { tap: o => this.tap(o) }); this.group.add(m); this.pads.push(m); });
+    UI.say('Tap the colour of the INK, not what the word says 🎨'); Audio.speak('Tap the ink colour, not the word');
+    setTimeout(() => this.alive && this.next(), 2200);
+  }
+  next() {
+    if (this.word) { this.group.remove(this.word); this.word = null; }
+    if (this.i >= this.trials) { this.ended = true; this.locked = true; const avg = this.times.reduce((a, b) => a + b, 0) / this.times.length / 1000; this.finish(this.mistakes === 0 && avg < 1.3 ? 3 : this.mistakes <= 2 ? 2 : 1, `${this.trials - this.mistakes}/${this.trials} correct · ${avg.toFixed(2)}s per word`); return; }
+    const ink = pick(this.set), text = Math.random() < this.congruent ? ink : pick(this.set.filter(c => c !== ink));
+    this.ink = ink; UI.level(`${this.i + 1}/${this.trials}`);
+    this.word = tile(wordTexture(text[0], '#ffffff', '#' + new THREE.Color(ink[1]).getHexString()), 0xffffff, 7, 3.2, 0.5); this.word.position.set(0, 2.6, 0); this.word.scale.setScalar(0.01);
+    Tween.to(this.word.scale, { x: 1, y: 1, z: 1 }, 150, Ease.back); this.group.add(this.word); this.t0 = performance.now(); this.locked = false;
+  }
+  tap(m) {
+    if (this.locked || this.ended) return; this.locked = true; this.times.push(performance.now() - this.t0); this.i++;
+    if (m.userData.c === this.ink) { Audio.tap(); this.tw(m.position, { z: 0.6 }, 80).then(() => this.tw(m.position, { z: 0 }, 120)); }
+    else { this.mistakes++; Audio.oops(); UI.say(`That was ${this.ink[0]} ink`, 900); this.tw(this.group.position, { x: 0.3 }, 50).then(() => this.tw(this.group.position, { x: -0.3 }, 50)).then(() => this.tw(this.group.position, { x: 0 }, 50)); }
+    UI.score(`✖ ${this.mistakes}`); setTimeout(() => this.alive && this.next(), 220);
+  }
+}
+
+/* =====================================================================
+   GAME 17 · Mental Chain (adults) — chained arithmetic held in working memory
+   ===================================================================== */
+class MentalChain extends Game {
+  start() {
+    this.stage.fit(11, 10);
+    const L = Math.min(this.level, 8) - 1;
+    this.steps = [3, 4, 4, 5, 5, 6, 7, 8][L]; this.showMs = Math.max(700, 1400 - L * 90); this.hard = L >= 2; this.round = 0; this.rounds = 3; this.mistakes = 0; this.cur = null;
+    setTimeout(() => this.alive && this.nextRound(), 400);
+  }
+  async nextRound() {
+    this.locked = true; this.round++; UI.score(`Round ${this.round}/${this.rounds}`); UI.hideKeypad(); UI.level(`${this.steps} steps`);
+    let v = randInt(2, this.hard ? 30 : 12); const chain = [String(v)];
+    for (let k = 0; k < this.steps; k++) {
+      const ops = this.hard ? ['+', '+', '-', '×', '÷'] : ['+', '+', '-'];
+      let op = pick(ops), b; 
+      if (op === '×') { b = randInt(2, 3); v *= b; } else if (op === '÷') { const d = [2, 3, 4, 5].filter(x => v % x === 0 && v / x > 0); if (!d.length) { op = '+'; b = randInt(2, 9); v += b; } else { b = pick(d); v /= b; } }
+      else if (op === '-') { b = randInt(1, Math.min(9, v - 1)); if (b < 1) { op = '+'; b = randInt(2, 9); v += b; } else v -= b; } else { b = randInt(2, this.hard ? 19 : 9); v += b; }
+      if (v > 400) { v -= 300; chain.push('− 300'); }
+      chain.push(`${op} ${b}`);
+    }
+    this.answer = v; this.typed = '';
+    UI.say('Follow the chain in your head…'); await this.sleep(1000);
+    for (const step of chain) {
+      if (this.cur) this.group.remove(this.cur);
+      this.cur = tile(wordTexture(step, '#ffffff', '#1f1b3a'), pick(PALETTE), 5, 2.6, 0.7); this.cur.position.set(0, 1.2, 0); this.cur.scale.setScalar(0.01); this.cur.rotation.set(0.15, -0.3, 0); this.group.add(this.cur);
+      Audio.tap(); await this.tw(this.cur.scale, { x: 1, y: 1, z: 1 }, 180, Ease.back); await this.sleep(this.showMs);
+      await this.tw(this.cur.scale, { x: 0.01, y: 0.01, z: 0.01 }, 120, Ease.in);
+    }
+    this.group.remove(this.cur); this.cur = null;
+    UI.say('= ?  Type the result'); UI.showKeypad(k => this.key(k)); this.locked = false;
+  }
+  key(k) {
+    if (this.locked) return;
+    if (k === '⌫') this.typed = this.typed.slice(0, -1); else if (k === 'OK') { this.check(); return; } else if (this.typed.length < 4) this.typed += k;
+    UI.say(this.typed ? '= ' + this.typed : '= ?  Type the result');
+  }
+  async check() {
+    if (!this.typed) return; this.locked = true; UI.hideKeypad();
+    if (Number(this.typed) === this.answer) { Audio.good(); UI.say(`Correct! = ${this.answer} ✅`); this.parts.push(...confetti(this.stage, this.group, 40, new THREE.Vector3(0, 1, 0))); }
+    else { this.mistakes++; Audio.oops(); UI.say(`It was ${this.answer} (you typed ${this.typed})`); }
+    await this.sleep(1600);
+    if (this.round >= this.rounds) this.finish(this.mistakes === 0 ? 3 : this.mistakes === 1 ? 2 : 1, `${this.rounds - this.mistakes}/${this.rounds} chains of ${this.steps} steps`); else this.nextRound();
+  }
+  destroy() { UI.hideKeypad(); super.destroy(); }
+}
+
+/* =====================================================================
+   GAME 18 · Schulte Table (adults) — attention span & peripheral vision
+   ===================================================================== */
+class Schulte extends Game {
+  start() {
+    const L = Math.min(this.level, 8) - 1;
+    this.n = [3, 4, 4, 5, 5, 5, 6, 6][L]; this.reverse = L === 5 || L === 7; const N = this.n * this.n, gap = this.n >= 6 ? 1.9 : 2.1;
+    this.stage.fit(this.n * gap + 0.8, this.n * gap + 2.2);
+    this.next = this.reverse ? N : 1; this.errors = 0; this.started = false; this.t0 = 0; this.elapsed = 0; this.done = false;
+    const nums = shuffle(Array.from({ length: N }, (_, i) => i + 1)), pos = gridLayout(N, this.n, gap, gap, 0.4);
+    this.tiles = nums.map((v, i) => { const m = tile(textTexture(String(v), '#ffffff', '#1f1b3a'), 0xffffff, gap * 0.86, gap * 0.86, 0.4); m.position.set(pos[i].x, pos[i].y, 0); m.userData.v = v; this.pickable(m, { tap: o => this.tap(o) }); this.group.add(m); return m; });
+    UI.say(this.reverse ? `Tap ${N} down to 1 as fast as you can — keep your eyes on the centre!` : `Tap 1 to ${N} in order as fast as you can — keep your eyes on the centre!`);
+    UI.score('⏱ 0.0s');
+  }
+  tap(m) {
+    if (this.done) return;
+    if (!this.started) { this.started = true; this.t0 = performance.now(); UI.say(''); }
+    if (m.userData.v === this.next) {
+      Audio.tap(); this.unpick(m); m.material[0].color.set(0x6bd968).convertSRGBToLinear(); this.tw(m.position, { z: -0.35 }, 120);
+      this.next += this.reverse ? -1 : 1;
+      if (this.reverse ? this.next < 1 : this.next > this.n * this.n) { this.done = true; this.elapsed = (performance.now() - this.t0) / 1000 + this.errors; const per = this.elapsed / (this.n * this.n); this.finish(per < 0.9 ? 3 : per < 1.5 ? 2 : 1, `${this.elapsed.toFixed(1)}s for ${this.n}×${this.n}${this.errors ? ` (incl. +${this.errors}s penalties)` : ''}`); }
+    } else { this.errors++; Audio.oops(); flashTile(m, 0xff5e7a, 200); UI.say(`Next is ${this.next} (+1s)`, 700); }
+  }
+  update(dt, t) { super.update(dt, t); if (this.started && !this.done) UI.score(`⏱ ${((performance.now() - this.t0) / 1000).toFixed(1)}s`); }
+}
+
 /* ================= Registry & App ================= */
 const BANDS = [
   { id: 'baby', label: 'Babies', age: '0–2', emoji: '👶', color: 0xff6f9c },
   { id: 'toddler', label: 'Toddlers', age: '2–4', emoji: '🧒', color: 0xff9f43 },
   { id: 'kid', label: 'Kids', age: '4–7', emoji: '🦸', color: 0x2fb5f0 },
   { id: 'big', label: 'Big Kids', age: '7–12', emoji: '🧠', color: 0x7c5cff },
+  { id: 'adult', label: 'Adults', age: '13+', emoji: '🧑', color: 0x1f6f8b },
 ];
 const GAMES = [
   { id: 'bubbles', title: 'Bubble Pop', emoji: '🫧', band: 'baby', skill: 'Cause & effect · visual tracking', cls: BubblePop, levels: 8 },
-  { id: 'peekaboo', title: 'Peekaboo Pip', emoji: '🙈', band: 'baby', skill: 'Object permanence · attention', cls: Peekaboo, levels: 8 },
+  { id: 'peekaboo', title: 'Peekaboo Pip', emoji: '🙈', band: 'baby', skill: 'Object permanence · attention', cls: Peekaboo, levels: 8, hideMascot: true },
   { id: 'sorter', title: 'Shape Sorter', emoji: '🔷', band: 'toddler', skill: 'Shapes · matching · fine motor', cls: ShapeSorter, levels: 8 },
   { id: 'pairs', title: 'Match Pairs', emoji: '🐶', band: 'toddler', skill: 'Visual memory', cls: MatchPairs, levels: 8 },
   { id: 'simon', title: 'Follow the Lights', emoji: '🎵', band: 'kid', skill: 'Sequence memory', cls: Simon, levels: 8 },
   { id: 'missing', title: "What's Missing?", emoji: '🔍', band: 'kid', skill: 'Attention · recall', cls: WhatsMissing, levels: 8 },
   { id: 'grid', title: 'Memory Grid', emoji: '🟨', band: 'big', skill: 'Spatial working memory', cls: MemoryGrid, levels: 8 },
   { id: 'digits', title: 'Number Recall', emoji: '🔢', band: 'big', skill: 'Digit span · working memory', cls: NumberRecall, levels: 8 },
+  { id: 'animals', title: 'Find the Animal', emoji: '🐮', band: 'baby', skill: 'Listening · first words', cls: FindAnimal, levels: 8 },
+  { id: 'howmany', title: 'How Many?', emoji: '🔢', band: 'toddler', skill: 'Counting · numbers', cls: HowMany, levels: 8 },
+  { id: 'odd', title: 'Odd One Out', emoji: '🔍', band: 'kid', skill: 'Visual discrimination · attention', cls: OddOneOut, levels: 8 },
+  { id: 'fruit', title: 'Catch the Fruit', emoji: '🍎', band: 'kid', skill: 'Impulse control · reaction speed', cls: CatchFruit, levels: 8 },
+  { id: 'math', title: 'Math Pop', emoji: '➕', band: 'big', skill: 'Mental arithmetic', cls: MathPop, levels: 8 },
+  { id: 'spin', title: 'Spin Match', emoji: '🔄', band: 'big', skill: 'Mental rotation · spatial reasoning', cls: SpinMatch, levels: 8 },
+  { id: 'nback', title: 'N-Back', emoji: '🧩', band: 'adult', skill: 'Working memory (single & dual)', cls: NBack, levels: 8, hideMascot: true },
+  { id: 'stroop', title: 'Stroop', emoji: '🎨', band: 'adult', skill: 'Inhibition · processing speed', cls: Stroop, levels: 8, hideMascot: true },
+  { id: 'chain', title: 'Mental Chain', emoji: '🔗', band: 'adult', skill: 'Working memory · arithmetic', cls: MentalChain, levels: 8, hideMascot: true },
+  { id: 'schulte', title: 'Schulte Table', emoji: '🔢', band: 'adult', skill: 'Attention · peripheral vision', cls: Schulte, levels: 8, hideMascot: true },
 ];
 
 const App = {
   init() {
     Store.load(); UI.init();
     this.stage = new Stage($('#stage'));
-    this.band = Store.data.band || 'toddler'; this.current = null;
+    this.band = Store.data.band || 'toddler'; this.current = null; this.stage.placeMascot();
     Audio.on = Store.data.sound !== false; this.updateSoundBtn();
+    Audio.onEvent = ev => { const m = this.stage.mascot; if (ev === 'cheer' || ev === 'good') m.play('jump'); else if (ev === 'oops') m.play('sad'); else if (ev === 'wow') m.play('wow'); };
+    setInterval(() => { const m = this.stage.mascot; if (m.group.visible && !m.anim && Math.random() < 0.5) m.play('wave'); }, 4000);
     this.renderHome();
     $('#btn-sound').onclick = () => { Audio.init(); Audio.on = !Audio.on; Store.data.sound = Audio.on; Store.save(); this.updateSoundBtn(); if (Audio.on) Audio.ding(); };
     $('#btn-back').onclick = () => this.goHome();
@@ -824,6 +1414,7 @@ const App = {
     if (this.current) this.current.destroy();
     this.stage.drag = null;
     UI.showGame(`${meta.emoji} ${meta.title}`);
+    this.stage.mascotMode = 'game'; this.stage.mascot.group.visible = !meta.hideMascot; this.stage.placeMascot(); this.stage.mascot.play('wave');
     this.stage.setTheme(BANDS.find(b => b.id === meta.band).color);
     const game = new meta.cls(this.stage, meta, clamp(level, 1, meta.levels));
     this.current = game; this.stage.game = game;
@@ -833,7 +1424,7 @@ const App = {
   },
   goHome() {
     if (this.current) { this.current.destroy(); this.current = null; this.stage.game = null; }
-    this.stage.fit(12, 12, 0); document.title = 'BrainPlay Kids';
+    this.stage.mascotMode = 'home'; this.stage.mascot.group.visible = true; this.stage.fit(12, 12, 0); this.stage.mascot.play('wave'); document.title = 'BrainPlay Kids';
     this.renderHome(); UI.showHome();
   },
   setupInstall() {
