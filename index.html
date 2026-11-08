@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>BrainPlay Kids</title>
+<meta name="description" content="Playful 3D memory and brain games for babies, toddlers, kids and big kids. Installable, works offline.">
+<meta name="theme-color" content="#7c5cff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BrainPlay">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<!-- ============ HOME ============ -->
+<section id="home" class="screen">
+  <header class="home-head">
+    <div class="logo"><span class="logo-emoji">🧠</span><span>BrainPlay</span></div>
+    <div class="head-actions">
+      <button id="btn-install" class="pill hidden" type="button">⬇️ Install app</button>
+      <button id="btn-sound" class="icon-btn" type="button" aria-label="Toggle sound">🔊</button>
+    </div>
+  </header>
+  <p class="tagline">Tap-happy 3D games that grow memory, focus and thinking — from first smiles to big-kid brains.</p>
+  <nav id="bands" class="bands" aria-label="Age groups"></nav>
+  <div id="games" class="games"></div>
+  <p id="ios-hint" class="ios-hint hidden">To install on iPhone/iPad: tap <b>Share</b> <span class="share-icon">⎋</span> then <b>Add to Home Screen</b>.</p>
+  <footer class="home-foot">Works offline once installed · No ads · No tracking</footer>
+</section>
+
+<!-- ============ GAME HUD ============ -->
+<section id="hud" class="screen hidden">
+  <div class="hud-top">
+    <button id="btn-back" class="icon-btn" type="button" aria-label="Back to menu">🏠</button>
+    <div class="hud-title"><span id="hud-name"></span><span id="hud-level" class="hud-level"></span></div>
+    <div id="hud-score" class="hud-score"></div>
+  </div>
+  <div id="say" class="say"></div>
+  <div id="keypad" class="keypad hidden"></div>
+</section>
+
+<!-- ============ END / PAUSE MODAL ============ -->
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="card">
+    <div id="modal-emoji" class="modal-emoji">🎉</div>
+    <h2 id="modal-title">Great job!</h2>
+    <div id="modal-stars" class="stars"></div>
+    <p id="modal-text"></p>
+    <div class="modal-actions">
+      <button id="modal-home" class="btn ghost" type="button">🏠 Menu</button>
+      <button id="modal-again" class="btn" type="button">🔁 Again</button>
+      <button id="modal-next" class="btn primary" type="button">⭐ Next level</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
+<script src="app.js"></script>
+</body>
+</html>
