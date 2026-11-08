@@ -1392,7 +1392,12 @@ const App = {
     $('#modal-again').onclick = () => this.startGame(this.current.meta, this.current.level);
     $('#modal-next').onclick = () => this.startGame(this.current.meta, Math.min(this.current.level + 1, this.current.meta.levels));
     this.setupInstall();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => { });
+      /* a new version took over: reload now if on the menu, otherwise when the player returns to it */
+      const had = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!had) return; if (this.current) this.updateReady = true; else location.reload(); });
+    }
     window.addEventListener('keydown', e => { if (e.key === 'Escape' && this.current) this.goHome(); });
   },
   updateSoundBtn() { $('#btn-sound').textContent = Audio.on ? '🔊' : '🔇'; },
@@ -1426,6 +1431,7 @@ const App = {
     if (this.current) { this.current.destroy(); this.current = null; this.stage.game = null; }
     this.stage.mascotMode = 'home'; this.stage.mascot.group.visible = true; this.stage.fit(12, 12, 0); this.stage.mascot.play('wave'); document.title = 'BrainPlay Kids';
     this.renderHome(); UI.showHome();
+    if (this.updateReady) location.reload();
   },
   setupInstall() {
     const btn = $('#btn-install');
