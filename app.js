@@ -1578,6 +1578,201 @@ class WhosWho extends Game {
   update(dt, t) { super.update(dt, t); for (const f of this.friends) f.update(dt, t); }
 }
 
+/* =====================================================================
+   GAME 23 · Slide Puzzle (big kids) — planning & spatial reasoning
+   Shuffled by walking the gap backwards from the solved board, so every puzzle can be solved.
+   ===================================================================== */
+class SlidePuzzle extends Game {
+  start() {
+    const L = Math.min(this.level, 8) - 1;
+    this.n = L < 4 ? 3 : 4; this.steps = [6, 12, 24, 60, 20, 40, 90, 200][L];
+    this.gap = 2.3; this.stage.fit(this.n * this.gap + 0.8, this.n * this.gap + 0.8);
+    this.board = this.shuffled(); this.moves = 0; this.done = false; this.tiles = [];
+    const frame = new THREE.Mesh(roundedBoxGeo(this.n * this.gap + 0.5, this.n * this.gap + 0.5, 0.4, 0.4), mat(0xffffff, { transparent: true, opacity: 0.28 }));
+    frame.position.z = -0.6; this.group.add(frame);
+    this.board.forEach((v, i) => {
+      if (!v) return;
+      /* tiles that belong in the same row share a colour, a gentle hint for younger players */
+      const hex = '#' + new THREE.Color(PALETTE[Math.floor((v - 1) / this.n) % PALETTE.length]).getHexString();
+      const m = tile(textTexture(String(v), hex, '#ffffff'), 0xffffff, this.gap * 0.9, this.gap * 0.9, 0.5);
+      const p = this.posOf(i); m.position.set(p.x, p.y, 0); m.userData.v = v;
+      m.scale.setScalar(0.01); Tween.to(m.scale, { x: 1, y: 1, z: 1 }, 300, Ease.back, i * 30);
+      this.pickable(m, { tap: o => this.slide(o) }); this.group.add(m); this.tiles.push(m);
+    });
+    this.onKey = e => this.key(e); window.addEventListener('keydown', this.onKey);
+    this.raiseMovable();
+    UI.score('🔁 0'); UI.say(`Slide the tiles into order, 1 to ${this.n * this.n - 1}. The gap goes last! 🧩`);
+  }
+  posOf(i) { return { x: (i % this.n - (this.n - 1) / 2) * this.gap, y: ((this.n - 1) / 2 - Math.floor(i / this.n)) * this.gap }; }
+  neighbors(i) {
+    const n = this.n, r = Math.floor(i / n), c = i % n, out = [];
+    if (r > 0) out.push(i - n); if (r < n - 1) out.push(i + n); if (c > 0) out.push(i - 1); if (c < n - 1) out.push(i + 1);
+    return out;
+  }
+  solved(board) { const N = this.n * this.n; return board.every((v, i) => v === (i + 1) % N); }
+  shuffled() {
+    const N = this.n * this.n;
+    for (; ;) {
+      const b = Array.from({ length: N }, (_, i) => (i + 1) % N);
+      let empty = N - 1, prev = -1;
+      for (let s = 0; s < this.steps; s++) {
+        const pickIdx = pick(this.neighbors(empty).filter(i => i !== prev));
+        b[empty] = b[pickIdx]; b[pickIdx] = 0; prev = empty; empty = pickIdx;
+      }
+      if (!this.solved(b)) return b;
+    }
+  }
+  /* movable tiles sit a little proud of the board */
+  raiseMovable() {
+    const can = new Set(this.neighbors(this.board.indexOf(0)));
+    for (const m of this.tiles) Tween.to(m.position, { z: !this.done && can.has(this.board.indexOf(m.userData.v)) ? 0.35 : 0 }, 120);
+  }
+  async slide(m) {
+    if (this.done) return;
+    const from = this.board.indexOf(m.userData.v), empty = this.board.indexOf(0);
+    if (!this.neighbors(empty).includes(from)) { this.tw(m.rotation, { z: 0.12 }, 60).then(() => this.tw(m.rotation, { z: -0.12 }, 60)).then(() => this.tw(m.rotation, { z: 0 }, 60)); return; }
+    this.board[empty] = m.userData.v; this.board[from] = 0; this.moves++; UI.score('🔁 ' + this.moves); Audio.tap();
+    this.locked = true; const p = this.posOf(empty);
+    await this.tw(m.position, { x: p.x, y: p.y }, 110, Ease.out);
+    this.locked = false;
+    if (this.solved(this.board)) {
+      this.done = true; this.raiseMovable(); Audio.good();
+      const r = this.moves / this.steps;
+      this.finish(r <= 1.5 ? 3 : r <= 3 ? 2 : 1, `Solved the ${this.n}×${this.n} in ${this.moves} moves!`);
+    } else this.raiseMovable();
+  }
+  /* arrow keys move the tile next to the gap in that direction */
+  key(e) {
+    if (this.locked || this.done) return;
+    const n = this.n, empty = this.board.indexOf(0), r = Math.floor(empty / n), c = empty % n;
+    const from = e.key === 'ArrowLeft' && c < n - 1 ? empty + 1 : e.key === 'ArrowRight' && c > 0 ? empty - 1 : e.key === 'ArrowUp' && r < n - 1 ? empty + n : e.key === 'ArrowDown' && r > 0 ? empty - n : -1;
+    if (from < 0) return;
+    e.preventDefault(); Audio.init();
+    const m = this.tiles.find(t => t.userData.v === this.board[from]); if (m) this.slide(m);
+  }
+  destroy() { window.removeEventListener('keydown', this.onKey); super.destroy(); }
+}
+
+/* =====================================================================
+   GAME 24 · Pixel Copy (kids) — visual memory & copying
+   Levels 1–4: copy the picture while it stays on screen. Levels 5–8: study it, then paint it from memory.
+   ===================================================================== */
+class PixelCopy extends Game {
+  start() {
+    const L = Math.min(this.level, 8) - 1;
+    this.n = [4, 5, 5, 6, 4, 5, 5, 6][L]; this.colors = L % 4 >= 2 ? shuffle(PALETTE).slice(0, 2) : [pick(PALETTE)];
+    this.memory = L >= 4; this.wrong = 0; this.peeks = 0; this.done = false; this.brush = this.colors[0]; this.mode = null;
+    this.target = this.pattern();
+    /* `up` lifts everything clear of the hint bubble at the bottom of the screen */
+    const cs = 1, B = this.n * cs, sep = 1.6, up = 1.2, portrait = window.innerHeight > window.innerWidth;
+    this.cellGeo = new THREE.BoxGeometry(cs * 0.9, cs * 0.9, 0.25);
+    const modelAt = portrait ? { x: 0, y: B / 2 + sep / 2 + 0.6 + up } : { x: -(B / 2 + sep / 2), y: 0.5 + up };
+    const paintAt = portrait ? { x: 0, y: -(B / 2 + sep / 2) + 0.6 + up } : { x: B / 2 + sep / 2, y: 0.5 + up };
+    if (portrait) this.stage.fit(B + 1, 2 * B + sep + 3 + 2 * up); else this.stage.fit(2 * B + sep + 1, B + 3 + 2 * up);
+
+    this.model = this.board(modelAt, (cell, i) => this.setCell(cell, this.target[i]));
+    this.cells = [];
+    this.canvas = this.board(paintAt, (cell, i) => { cell.userData.i = i; cell.userData.v = 0; this.pickable(cell, { tap: o => this.paintStart(o) }); this.cells.push(cell); });
+
+    /* brush swatches under the canvas; with one colour it is just a reminder of what you paint with */
+    this.swatches = this.colors.map((color, i) => {
+      const s = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 18), mat(color, { roughness: .3 }));
+      s.position.set(paintAt.x + (i - (this.colors.length - 1) / 2) * 1.4, paintAt.y - B / 2 - 1, 0.3); s.userData.color = color;
+      this.pickable(s, { tap: o => this.pickBrush(o) }); this.group.add(s); return s;
+    });
+    this.ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.07, 8, 32), mat(0xffffff)); this.group.add(this.ring); this.placeRing();
+
+    this.onMove = e => this.paintMove(e); this.onUp = () => { this.mode = null; };
+    this.stage.canvas.addEventListener('pointermove', this.onMove); window.addEventListener('pointerup', this.onUp); window.addEventListener('pointercancel', this.onUp);
+    UI.score(this.memory ? '👀 0' : '✏️ 0');
+    if (this.memory) this.study(); else UI.say('Copy the picture! Tap or drag to paint 🎨');
+  }
+  /* a random picture mirrored left-to-right, so it reads like a little creature or icon */
+  pattern() {
+    const n = this.n, half = Math.ceil(n / 2), out = new Array(n * n).fill(0);
+    for (; ;) {
+      let filled = 0;
+      for (let r = 0; r < n; r++) for (let c = 0; c < half; c++) {
+        const v = Math.random() < 0.45 ? pick(this.colors) : 0;
+        out[r * n + c] = out[r * n + (n - 1 - c)] = v;
+        if (v) filled += c === n - 1 - c ? 1 : 2;
+      }
+      const used = new Set(out.filter(Boolean));
+      if (filled >= n + 1 && filled <= n * n * 0.6 && used.size === this.colors.length) return out.slice();
+    }
+  }
+  board(at, each) {
+    const g = new THREE.Group(); g.position.set(at.x, at.y, 0); this.group.add(g);
+    const back = new THREE.Mesh(roundedBoxGeo(this.n + 0.4, this.n + 0.4, 0.3, 0.3), mat(0xffffff, { transparent: true, opacity: 0.3 })); back.position.z = -0.3; g.add(back);
+    for (let i = 0; i < this.n * this.n; i++) {
+      const cell = new THREE.Mesh(this.cellGeo, mat(0xffffff, { roughness: .55 }));
+      cell.position.set(i % this.n - (this.n - 1) / 2, (this.n - 1) / 2 - Math.floor(i / this.n), 0);
+      g.add(cell); each(cell, i);
+    }
+    g.scale.setScalar(0.01); Tween.to(g.scale, { x: 1, y: 1, z: 1 }, 400, Ease.back);
+    return g;
+  }
+  setCell(cell, v) { cell.material.color.set(v || 0xffffff).convertSRGBToLinear(); cell.position.z = v ? 0.12 : 0; }
+  async study() {
+    this.locked = true; UI.say('Remember the picture! 👀'); Audio.speak('Remember the picture');
+    await this.sleep(2600 + this.n * 450);
+    await this.hideModel();
+    UI.say('Now paint it from memory 🎨 Tap ❓ to peek'); this.locked = false;
+  }
+  async hideModel() {
+    Audio.whoosh();
+    await this.tw(this.model.scale, { x: 0.01, y: 0.01, z: 0.01 }, 250, Ease.in);
+    if (!this.cover) {
+      this.cover = tile(emojiTexture('❓', '#ffffff'), 0xffffff, this.n + 0.4, this.n + 0.4, 0.4);
+      this.cover.position.copy(this.model.position); this.pickable(this.cover, { tap: () => this.peek() }); this.group.add(this.cover);
+    }
+    this.cover.visible = true; this.cover.scale.setScalar(0.01); this.tw(this.cover.scale, { x: 1, y: 1, z: 1 }, 300, Ease.back);
+  }
+  async peek() {
+    if (this.done || this.locked) return;
+    this.locked = true; this.peeks++; UI.score('👀 ' + this.peeks); Audio.tap();
+    this.cover.visible = false; this.model.scale.setScalar(1);
+    await this.sleep(1300);
+    await this.hideModel(); this.locked = false;
+  }
+  pickBrush(s) { this.brush = s.userData.color; Audio.tap(); this.placeRing(); }
+  placeRing() { const s = this.swatches.find(x => x.userData.color === this.brush); this.ring.position.set(s.position.x, s.position.y, 0.3); }
+  /* the first cell decides the stroke: tapping a cell already in this colour erases, anything else paints */
+  paintStart(cell) { if (this.done) return; this.mode = cell.userData.v === this.brush ? 'erase' : 'paint'; this.last = cell.position.clone(); this.paint(cell); }
+  /* pointer events arrive far apart on a fast swipe, so walk the segment since the last one and paint every cell it crosses */
+  paintMove(e) {
+    if (!this.mode || this.done || this.locked) return;
+    const n = this.n, to = this.canvas.worldToLocal(this.stage.pointerInfo(e)), from = this.last || to;
+    const steps = Math.max(1, Math.ceil(from.distanceTo(to) / 0.25));
+    for (let s = 1; s <= steps; s++) {
+      const x = from.x + (to.x - from.x) * s / steps, y = from.y + (to.y - from.y) * s / steps;
+      const c = Math.round(x + (n - 1) / 2), r = Math.round((n - 1) / 2 - y);
+      if (c >= 0 && c < n && r >= 0 && r < n) this.paint(this.cells[r * n + c]);
+      if (this.done) return;
+    }
+    this.last = to;
+  }
+  paint(cell) {
+    const v = this.mode === 'erase' ? 0 : this.brush;
+    if (cell.userData.v === v) return;
+    cell.userData.v = v; this.setCell(cell, v); Audio.note(cell.userData.i % 9, 0.12);
+    if (v && v !== this.target[cell.userData.i]) { this.wrong++; if (!this.memory) UI.score('✏️ ' + this.wrong); }
+    if (this.cells.every(c => c.userData.v === this.target[c.userData.i])) this.complete();
+  }
+  async complete() {
+    this.done = true; this.mode = null; Audio.good();
+    if (this.cover) { this.cover.visible = false; this.model.scale.setScalar(1); }
+    for (const g of [this.model, this.canvas]) this.tw(g.scale, { x: 1.08, y: 1.08, z: 1.08 }, 150).then(() => this.tw(g.scale, { x: 1, y: 1, z: 1 }, 200));
+    const score = this.wrong + this.peeks * 2;
+    this.finish(score <= 1 ? 3 : score <= 5 ? 2 : 1, this.memory ? `Painted from memory${this.peeks ? ` with ${this.peeks} peek${this.peeks > 1 ? 's' : ''}` : ' with no peeks'}!` : 'A perfect copy!');
+  }
+  update(dt, t) { super.update(dt, t); if (this.ring) this.ring.rotation.z = t * 1.5; }
+  destroy() {
+    this.stage.canvas.removeEventListener('pointermove', this.onMove); window.removeEventListener('pointerup', this.onUp); window.removeEventListener('pointercancel', this.onUp);
+    super.destroy();
+  }
+}
+
 /* ================= Registry & App ================= */
 const BANDS = [
   { id: 'baby', label: 'Babies', age: '0–2', emoji: '👶', color: 0xff6f9c },
@@ -1602,6 +1797,8 @@ const GAMES = [
   { id: 'fruit', title: 'Catch the Fruit', emoji: '🍎', band: 'kid', skill: 'Impulse control · reaction speed', cls: CatchFruit, levels: 8 },
   { id: 'math', title: 'Math Pop', emoji: '➕', band: 'big', skill: 'Mental arithmetic', cls: MathPop, levels: 8 },
   { id: 'spin', title: 'Spin Match', emoji: '🔄', band: 'big', skill: 'Mental rotation · spatial reasoning', cls: SpinMatch, levels: 8 },
+  { id: 'slide', title: 'Slide Puzzle', emoji: '🧱', band: 'big', skill: 'Planning · spatial reasoning', cls: SlidePuzzle, levels: 8 },
+  { id: 'pixel', title: 'Pixel Copy', emoji: '🖌️', band: 'kid', skill: 'Visual memory · copying', cls: PixelCopy, levels: 8 },
   { id: 'nback', title: 'N-Back', emoji: '🧩', band: 'adult', skill: 'Working memory (single & dual)', cls: NBack, levels: 8, hideMascot: true },
   { id: 'stroop', title: 'Stroop', emoji: '🎨', band: 'adult', skill: 'Inhibition · processing speed', cls: Stroop, levels: 8, hideMascot: true },
   { id: 'chain', title: 'Mental Chain', emoji: '🔗', band: 'adult', skill: 'Working memory · arithmetic', cls: MentalChain, levels: 8, hideMascot: true },

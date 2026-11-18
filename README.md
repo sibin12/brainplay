@@ -6,8 +6,8 @@ Playful 3D memory & brain games for children, grouped by age. Installable PWA, w
 |---|---|---|
 | Babies 0–2 | Bubble Pop, Peekaboo Pip, Find the Animal | cause & effect, tracking, object permanence, first words |
 | Toddlers 2–4 | Shape Sorter, Match Pairs, How Many? | shape matching, fine motor, visual memory, counting |
-| Kids 4–7 | Follow the Lights, What's Missing?, Odd One Out, Catch the Fruit | sequence memory, attention & recall, discrimination, impulse control |
-| Big Kids 7–12 | Memory Grid, Number Recall, Math Pop, Spin Match | spatial working memory, digit span, arithmetic, mental rotation |
+| Kids 4–7 | Follow the Lights, What's Missing?, Odd One Out, Catch the Fruit, Pixel Copy | sequence memory, attention & recall, discrimination, impulse control, copying & picture memory |
+| Big Kids 7–12 | Memory Grid, Number Recall, Math Pop, Spin Match, Slide Puzzle | spatial working memory, digit span, arithmetic, mental rotation, planning |
 | Adults 13+ | N-Back, Stroop, Mental Chain, Schulte Table | working memory, inhibition, chained arithmetic, attention |
 | Bo's World (all ages) | Bo Says, Copy the Look, Feed Bo, Who's Who | copying move sequences, outfit memory, listening & dragging, name–face memory |
 
